@@ -5,3 +5,4 @@ posters/_sheet.png
 *.log
 .playwright-mcp/
 .commitmsg.txt
+.msg.txt
