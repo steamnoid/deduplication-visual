@@ -44,75 +44,132 @@
   }
 
   const TYPES = {
-    vm: { name: 'obrazy VM', share: 0.82, noise: 0.05, mb: 3 },
-    code: { name: 'kod źródłowy', share: 0.55, noise: 0.18, mb: 1.4 },
-    logs: { name: 'logi', share: 0.30, noise: 0.35, mb: 2.2 },
-    db: { name: 'zrzuty bazy', share: 0.70, noise: 0.08, mb: 1.8 }
+    vm: { name: 'obrazy VM', share: 0.82, ext: 'vmdk', base: 'img', churn: 0.02 },
+    code: { name: 'kod źródłowy', share: 0.55, ext: 'tar', base: 'src', churn: 0.10 },
+    logs: { name: 'logi', share: 0.30, ext: 'log', base: 'app', churn: 0.35 },
+    db: { name: 'zrzuty bazy', share: 0.70, ext: 'sql', base: 'dump', churn: 0.05 }
   };
 
-  /* Buduje zbiór plików o zadanej redundancji.
-     redundancy: 0 = plik nigdy nie znacznie się nie powtarza,
-                 1 = prawie identyczne kopie. */
+  /* Buduje zbiór plików o zadanej redundancji i liczbie wersji.
+     Wersja 0 to treść bazowa; każda następna to kopia poprzedniej
+     z prawdziwymi zmianami bajtów, więc chunking na każdej wersji
+     daje inne granice. */
   function buildDataset(cfg) {
     const T = TYPES[cfg.type] || TYPES.vm;
-    const poolSize = cfg.files * cfg.fileKB * 1024;
-    const pool = makePool(poolSize + 64 * 1024, cfg.seed || 12345);
-    const files = [];
-    let used = 0;
-
-    // biblioteka wspólna — obszar puli, z którego pliki będą kopiować
-    const libLen = Math.floor(poolSize * 0.5);
+    const versions = Math.max(1, cfg.versions || 1);
+    const fileLen = Math.floor(cfg.fileKB * 1024);
+    const files = cfg.files;
+    const bodyBytes = fileLen * versions * files;
+    const libLen = Math.floor(bodyBytes * 0.4);
+    // zapas na wersje tworzone w trakcie osi czasu
+    const growBodies = cfg.growBodies != null ? cfg.growBodies : files * (cfg.days || 30);
+    const pool = makePool(bodyBytes + libLen + fileLen * growBodies + 65536, cfg.seed || 12345);
     stamp(pool, 0, libLen, 0);
 
-    for (let i = 0; i < cfg.files; i++) {
-      const len = Math.floor(cfg.fileKB * 1024);
-      const off = used;
-      used += len;
-      const isCopy = i > 0 && (i / cfg.files) < cfg.redundancy;
+    const out = [];
+    let used = libLen;
+    const rnd = mulberry((cfg.seed || 12345) ^ 0x5bf03635);
 
-      if (isCopy && i > 1) {
-        // plik dziedziczy po poprzednim: kopia + mała zmiana
-        const src = files[i - 1].off;
-        const changeAt = off + Math.floor(len * (0.2 + 0.6 * ((i * 0.37) % 1)));
-        const changeLen = Math.max(256, Math.floor(len * T.noise * 0.5));
-        // kopiujemy wspólne części, resztę z własnej puli
-        const segs = segmentsFor(len, T.share, i);
-        segs.forEach(s => pool.copyWithin(off + s.at, src + s.at, src + s.at + s.len));
-        // doklejki unikalne dla tego pliku
-        pool[changeAt] = (pool[changeAt] + 91) & 0xff;
-        pool[(changeAt + 17) % used] = (pool[(changeAt + 17) % used] + 7) & 0xff;
-        void changeLen;
-      } else if (i === 1) {
-        // pierwsza kopia rodzaju
-        const segs = segmentsFor(len, T.share, i);
-        segs.forEach(s => pool.copyWithin(off + s.at, 0, s.len));
+    for (let i = 0; i < files; i++) {
+      const segs = segmentsFor(fileLen, T.share);
+      const isCopy = i > 0 && (i / files) < cfg.redundancy;
+      const srcBody = isCopy ? out[out.length - 1].bodies[0] : null;
+      const bodies = [];
+
+      for (let v = 0; v < versions; v++) {
+        const off = used; used += fileLen;
+        if (v === 0) {
+          if (srcBody) {
+            for (const sg of segs) pool.copyWithin(off + sg.at, srcBody.off + sg.at, srcBody.off + sg.at + sg.len);
+          } else if (i === 1) {
+            for (const sg of segs) pool.copyWithin(off + sg.at, 0, sg.len);
+          }
+        } else {
+          // kopia poprzedniej wersji: większość bajtów zostaje, reszta to realne zmiany
+          const prev = bodies[v - 1];
+          pool.copyWithin(off, prev.off, prev.off + fileLen);
+          const spots = 1 + Math.floor(rnd() * 3);
+          for (let s = 0; s < spots; s++) {
+            const at = Math.floor(rnd() * (fileLen - 512));
+            const len = 128 + Math.floor(rnd() * 640);
+            for (let k = 0; k < len; k++) {
+              pool[off + at + k] = (pool[off + at + k] + 17 + k) & 0xff;
+            }
+          }
+        }
+        bodies.push({ off, len: fileLen });
       }
 
-      files.push({
-        i,
-        name: fileName(cfg.type, i),
-        off, len,
-        type: cfg.type,
+      out.push({
+        i, name: fileName(cfg.type, i), type: cfg.type,
+        len: fileLen, bodies, version: 0,
+        off: bodies[0].off,
         kind: isCopy ? 'copy' : 'base',
-        v1: true
+        dead: false, born: 0
       });
     }
-    return { pool, files, poolSize: used, type: T };
+    const ds = { pool, files: out, poolSize: used, type: T, libEnd: libLen, fileLen, usedBytes: used };
+
+    /* Nowa wersja pliku w trakcie osi czasu: kopia poprzedniej
+       z prawdziwymi zmianami bajtów. Rozmiar zmiany wynika z typu
+       pliku (VM ledwo żyje, logi zmieniają się całkowicie), więc
+       delta na dysku jest taka, jakaby była naprawdę. */
+    ds.advance = function (f, r) {
+      if (used + fileLen > pool.length) return f.bodies.length - 1;
+      const off = used; used += fileLen;
+      const prev = f.bodies[f.bodies.length - 1];
+      pool.copyWithin(off, prev.off, prev.off + fileLen);
+      const span = Math.max(256, Math.floor(fileLen * T.churn * (0.5 + r())));
+      const at = Math.floor(r() * Math.max(1, fileLen - span));
+      for (let k = 0; k < span; k++) pool[off + at + k] = (pool[off + at + k] + 31 + k) & 0xff;
+      f.bodies.push({ off, len: fileLen });
+      ds.usedBytes = used;
+      return f.bodies.length - 1;
+    };
+    /* Plik wchodzący do produkcji „od nowa": wspólne fragmenty
+       z biblioteki, reszta to świeże bajty. Dzięki temu nowy plik
+       nie dziedziczy po starym historii i nie deduplikuje się
+       podejrzanie dobrze. */
+    ds.recycle = function (f, r) {
+      if (used + fileLen > pool.length) return false;
+      const off = used; used += fileLen;
+      const segs = segmentsFor(fileLen, T.share);
+      for (const sg of segs) pool.copyWithin(off + sg.at, 0, sg.len);
+      for (let k = 0; k < Math.floor(fileLen * 0.02); k++) {
+        const at = Math.floor(r() * fileLen);
+        pool[off + at] = (pool[off + at] + 7) & 0xff;
+      }
+      f.bodies = [{ off, len: fileLen }];
+      f.version = 0;
+      f.dead = false;
+      ds.usedBytes = used;
+      return true;
+    };
+    return ds;
+  }
+
+  function mulberry(a) {
+    return function () {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
   }
 
   /* Podział pliku na segmenty: `share` długości pochodzi z bazy,
      reszta to materiał unikalny dla pliku. */
-  function segmentsFor(len, share, i) {
+  function segmentsFor(len, share) {
     const segs = [];
     const shared = Math.floor(len * share);
     for (let at = 0; at < shared; at += 4096) segs.push({ at, len: Math.min(4096, shared - at) });
-    void i;
     return segs;
   }
 
   function fileName(type, i) {
-    const base = { vm: 'img', code: 'src', logs: 'app', db: 'dump' }[type] || 'file';
-    return base + '-' + String(i + 1).padStart(3, '0') + '.' + { vm: 'vmdk', code: 'tar', logs: 'log', db: 'sql' }[type];
+    const T = TYPES[type] || TYPES.vm;
+    return T.base + '-' + String(i + 1).padStart(3, '0') + '.' + T.ext;
   }
 
   /* ---------- gear hash (tablica jak w rozdziale 3) ---------- */
@@ -207,7 +264,7 @@
   /* ---------- kontenery na dysku ---------- */
 
   class Container {
-    constructor(cap) { this.cap = cap; this.used = 0; this.chunks = []; }
+    constructor(cap) { this.cap = cap; this.used = 0; this.chunks = []; this.data = new Uint8Array(cap); }
     get free() { return this.cap - this.used; }
     get fill() { return this.used / this.cap; }
   }
@@ -233,6 +290,11 @@
       this.chunkId = 0;
       this.fileQueue = ds.files.map(f => f.i);
       this.fileIdx = 0;
+      this.day = 0;              // dzień osi czasu (oś 30 dni)
+      this.gcLog = [];           // przebiegi kompaktacji
+      this.bodyLog = new Map();  // (plik, dzień) -> bajty tej wersji
+      this.expiredKeys = new Set(); // backupy już wygaszone
+      this._storeBytes = cfg.keepBytes !== false;
       this.chunker = null;
       this.curFile = null;
       this.fileChunkMarks = [];
@@ -241,7 +303,7 @@
         logical: 0, written: 0, chunks: 0, unique: 0, dups: 0,
         bytesScanned: 0, ms: 0, peakIndex: 0, bucketHits: 0,
         expiredBytes: 0, expiredChunks: 0, expiredRefs: 0, gcRuns: 0, gcRewritten: 0,
-        backups: 0, falseNeg: 0
+        gcRead: 0, gcChunks: 0, backups: 0, falseNeg: 0, restoredFiles: 0, restoredBytes: 0
       };
       this.history = {
         logical: [], ratio: [], ram: [], written: [], avg: [],
@@ -266,15 +328,26 @@
     get idxStats() { return this.idx ? this.idx.st : null; }
 
     makeIndex() {
-      this.idx = SIM.indices.makeIndex(this.cfg.indexKind || 'hash', this.cfg.segChunks);
+      this.idx = NS.indices.makeIndex(this.cfg.indexKind || 'hash', this.cfg.segChunks);
     }
+
+    /* Kolejka to lista wpisów {fi, v}: fi = indeks pliku, v = wersja.
+       Zwykła liczba oznacza wersję 0, więc ścieżka bez osi czasu
+       (S1/S2) działa jak dotąd. */
+    markKey(fi, day) { return fi + '@' + (day == null ? this.day : day); }
 
     startFile() {
       if (this.fileIdx >= this.fileQueue.length) { this.done = true; return false; }
-      const f = this.ds.files[this.fileQueue[this.fileIdx++]];
+      const entry = this.fileQueue[this.fileIdx++];
+      const fi = typeof entry === 'number' ? entry : entry.fi;
+      const v = typeof entry === 'number' ? 0 : (entry.v || 0);
+      const f = this.ds.files[fi];
+      const body = f.bodies ? f.bodies[Math.min(v, f.bodies.length - 1)] : f;
       this.curFile = f;
-      this.chunker = new Chunker(this.ds.pool, f.off, f.len, this.cfg.bits, this.cfg.fastCDC);
+      this.curVersion = v;
+      this.chunker = new Chunker(this.ds.pool, body.off, body.len, this.cfg.bits, this.cfg.fastCDC);
       this.fileChunkMarks = [];
+      this.bodyLog.set(this.markKey(f.i, this.day), body);
       this.st.backups++;
       if (this.idx) this.idx.beginFile(f.i);
       return true;
@@ -313,7 +386,8 @@
           cid = e.id;
           this._grow(this.isNew, e.id); this.isNew[e.id] = 1;
           this._grow(this.chunkRefs, e.id); this.chunkRefs[e.id] = 1;
-          if (this.bucketCounts[bucket] > 0) st.bucketHits++;
+          this._storeOff = ch.off + cs;
+        if (this.bucketCounts[bucket] > 0) st.bucketHits++;
           this.bucketCounts[bucket]++;
           this.storeChunk(e, len);
           st.unique++;
@@ -329,8 +403,9 @@
         this.tail.push(cid);
         if (this.tail.length > 600) this.tail.splice(0, this.tail.length - 600);
 
-        let m = this.marksByFile.get(this.curFile.i);
-        if (!m) { m = []; this.marksByFile.set(this.curFile.i, m); }
+        const mk = this.markKey(this.curFile.i, this.day);
+        let m = this.marksByFile.get(mk);
+        if (!m) { m = []; this.marksByFile.set(mk, m); }
         m.push(cid);
       }
 
@@ -364,19 +439,25 @@
       const off = cont.used;
       cont.used += len;
       cont.chunks.push(e.id);
+      if (cont.data && this._storeBytes) {
+        cont.data.set(this.ds.pool.subarray(this._storeOff, this._storeOff + len), off);
+      }
       this.byChunkId[e.id] = { cont: this.containers.length - 1, off, len };
     }
 
     /* retencja: wygasamy najstarsze pliki → referencje spadają,
        chunki bez referencji zostawiają dziurę w kontenerze */
-    expireFiles(count) {
-      const doneFiles = this.fileQueue.slice(0, Math.max(0, this.fileIdx));
-      const victims = doneFiles.slice(0, count);
+    expireFiles(count, queue, day) {
+      const doneFiles = (queue || this.fileQueue).slice(0, count);
+      const victims = doneFiles;
       let freed = 0, dropped = 0, chunks = 0;
-      victims.forEach(fi => {
+      victims.forEach(entry => {
+        const fi = typeof entry === 'number' ? entry : entry.fi;
         const f = this.ds.files[fi];
-        if (f.dead) return;
-        const marks = this.marksByFile.get(fi);
+        const key = this.markKey(fi, day);
+        if (this.expiredKeys.has(key)) return;   // ten backup już wygasł
+        this.expiredKeys.add(key);
+        const marks = this.marksByFile.get(key);
         if (marks) {
           for (let i = 0; i < marks.length; i++) {
             const cid = marks[i];
@@ -393,13 +474,93 @@
             }
           }
         }
-        f.dead = true;
+        // plik ginie z listy tylko w trybie jednodniowym (S2);
+        // na osi czasu plik żyje dalej, wygasa wyłącznie ten backup
+        if (day == null) f.dead = true;
       });
       this.st.expiredBytes += freed;
       this.st.expiredChunks += dropped;
       this.st.expiredRefs += chunks;
       this.expireEvent = (this.expireEvent || 0) + 1;
       return { freed, dropped, files: victims.length };
+    }
+
+    /* Kompaktacja: żywe chunki przenosimy do nowych kontenerów, stare
+       znikają razem z dziurami. To jedyne miejsce, gdzie dane faktycznie
+       przepisujemy — stąd write amplification. Identyfikatory chunków
+       zostają, więc pliki i ich oznaczenia dalej się zgadzają. */
+    gc(force) {
+      const disk = this.diskBytes;
+      const holes = this.holesBytes;
+      if (!force && (disk === 0 || holes / disk < 0.25)) return null;
+      const t0 = performance.now();
+      const newC = [], newHoles = [], newBy = new Array(this.byChunkId.length);
+      let cur = null, ci = -1, read = 0, written = 0, moved = 0;
+
+      for (let id = 0; id < this.byChunkId.length; id++) {
+        if ((this.chunkRefs[id] | 0) <= 0) continue;
+        const slot = this.byChunkId[id];
+        if (!slot) continue;
+        const src = this.containers[slot.cont];
+        if (!cur || cur.free < slot.len) {
+          cur = new Container(this.containerSize);
+          ci = newC.length; newC.push(cur); newHoles.push(0);
+        }
+        const off = cur.used;
+        cur.used += slot.len;
+        cur.chunks.push(id);
+        if (cur.data && src && src.data) cur.data.set(src.data.subarray(slot.off, slot.off + slot.len), off);
+        newBy[id] = { cont: ci, off, len: slot.len };
+        read += slot.len; written += slot.len; moved++;
+      }
+
+      const before = { containers: this.containers.length, bytes: disk, holes };
+      this.containers = newC; this.contHoles = newHoles; this.byChunkId = newBy;
+      this.st.gcRuns++;
+      this.st.gcRewritten += written;
+      this.st.gcRead += read;
+      this.st.gcChunks += moved;
+      const rec = { day: this.day, read, written, chunks: moved, before,
+        after: { containers: this.containers.length, bytes: this.diskBytes, holes: this.holesBytes },
+        ms: performance.now() - t0 };
+      this.gcLog.push(rec);
+      return rec;
+    }
+
+    /* Odtworzenie pliku z backupu dnia `day`. Sklejamy prawdziwe bajty
+       z kontenerów i porównujemy z oryginałem — jeśli restore ma być
+       wiarygodny, musi dać bajt w bajt, a nie tylko długość.
+       Seek liczymy jako zmianę kontenera: plik czytamy w kolejności
+       zapisu, więc w obrębie konteneru idziemy sekwencyjnie. */
+    restore(day, fi) {
+      const f = this.ds.files[fi];
+      const marks = this.marksByFile.get(this.markKey(fi, day));
+      if (!marks) return null;
+      let total = 0;
+      for (let i = 0; i < marks.length; i++) {
+        const sl = this.byChunkId[marks[i]];
+        if (!sl) return null;
+        total += sl.len;
+      }
+      const out = new Uint8Array(total);
+      const seen = new Set();
+      let o = 0, seek = 0, last = -1;
+      for (let i = 0; i < marks.length; i++) {
+        const sl = this.byChunkId[marks[i]];
+        if (sl.cont !== last) { seen.add(sl.cont); seek++; last = sl.cont; }
+        const src = this.containers[sl.cont];
+        if (src && src.data) out.set(src.data.subarray(sl.off, sl.off + sl.len), o);
+        o += sl.len;
+      }
+      const body = this.bodyLog.get(this.markKey(fi, day)) || f;
+      let same = true, firstDiff = -1;
+      for (let i = 0; i < total; i++) {
+        if (out[i] !== this.ds.pool[body.off + i]) { same = false; firstDiff = i; break; }
+      }
+      this.st.restoredFiles++;
+      this.st.restoredBytes += total;
+      return { file: f.name, day, bytes: total, chunks: marks.length,
+        containers: seen.size, seeks: seek, verified: same, firstDiff };
     }
 
     sample() {

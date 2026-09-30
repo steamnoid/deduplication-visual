@@ -385,6 +385,107 @@
     return n;
   }
 
-  NS.view = { draw, C, rr, box, text, alpha, bar, spark, fmtB };
+
+  /* ---------- wykres 30 dni ---------- */
+
+  /* Trzy serie na jednym obrazie, bo to one się ze sobą biją:
+     zapisane bajty (słupki), dziury po retencji (linia) i momenty,
+     w których GC zabrał się do sprzątania (znaczniki). */
+  function drawTimeline(ctx, W, H, res, sel) {
+    const S = res.series;
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    const padL = 56, padR = 58, padT = 52, padB = 40;
+    const px = padL, py = padT;
+    const pw = W - padL - padR, ph = H - padT - padB;
+
+    let maxW = 1, maxH = 0.01;
+    for (const d of S) { maxW = Math.max(maxW, d.written); maxH = Math.max(maxH, d.holesRatio); }
+    const niceW = niceMax(maxW), niceH = Math.min(1, Math.max(0.3, Math.ceil(maxH * 5) / 5));
+
+    // siatka i podpisy osi
+    for (let i = 0; i <= 4; i++) {
+      const y = py + ph - (ph * i) / 4;
+      ctx.strokeStyle = i ? C.line : '#3a4a70';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px, Math.round(y) + .5); ctx.lineTo(px + pw, Math.round(y) + .5); ctx.stroke();
+      text(ctx, fmtB((niceW * i) / 4), px - 8, y, { size: 10, color: C.dim, align: 'right', mono: true });
+      text(ctx, Math.round((niceH * i) / 4 * 100) + '%', px + pw + 8, y, { size: 10, color: C.dim, mono: true });
+    }
+
+    const bw = pw / S.length;
+    const barW = Math.max(3, bw - 5);
+
+    for (let i = 0; i < S.length; i++) {
+      const d = S[i];
+      const x = px + i * bw;
+      const h = (d.written / niceW) * ph;
+      const y = py + ph - h;
+      const isSel = i === sel;
+      const first = d.day === 1;
+      const col = first ? C.violet : (d.ratio > 8 ? C.save : d.ratio > 2 ? C.dupe : C.new);
+      ctx.fillStyle = isSel ? col : alpha(col, 0.72);
+      rr(ctx, x + 2.5, y, barW, Math.max(2, h), Math.min(3, barW / 2));
+      ctx.fill();
+      if (isSel) {
+        ctx.strokeStyle = C.text; ctx.lineWidth = 1;
+        rr(ctx, x + 2.5, y, barW, Math.max(2, h), Math.min(3, barW / 2)); ctx.stroke();
+      }
+      // dwa pasy zdarzeń nad wykresem: wygaśnięte kopie i GC
+      if (d.expired > 0) {
+        ctx.fillStyle = alpha(C.ref, 0.9);
+        ctx.fillRect(x + 2.5, py - 20, barW, 4);
+      }
+      if (d.gc) {
+        const gh = 4 + (d.gc / Math.max(1, maxW)) * 12;
+        ctx.fillStyle = C.bad;
+        ctx.fillRect(x + 2.5, py - 13, barW, gh);
+      }
+      if ((i + 1) % 5 === 0 || i === S.length - 1) {
+        text(ctx, 'd' + d.day, x + bw / 2, py + ph + 14, { size: 10, color: C.dim, align: 'center' });
+      }
+    }
+
+    // linia dziur: procent niewykorzystanego miejsca w kontenerach
+    ctx.strokeStyle = C.bad; ctx.lineWidth = 1.6;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    S.forEach((d, i) => {
+      const x = px + i * bw + bw / 2;
+      const y = py + ph - (d.holesRatio / niceH) * ph;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // legenda
+    text(ctx, 'zapisane bajty / dzień', px, 12, { size: 11, color: C.muted });
+    text(ctx, 'dziury %', px + 138, 12, { size: 11, color: C.bad });
+    text(ctx, 'pasek: wygaśnięte kopie', px + 196, 12, { size: 10, color: C.ref });
+    text(ctx, 'pasek: GC', px + 324, 12, { size: 10, color: C.bad });
+    text(ctx, 'słupek fioletowy: pierwszy pełny backup', px + 388, 12, { size: 10, color: C.violet });
+
+    // podświetlenie wybranego dnia: pasek pod osią i opis pod nim
+    const d = S[sel];
+    const selX = px + sel * bw;
+    ctx.fillStyle = alpha(C.info, 0.13);
+    ctx.fillRect(selX, py - 10, bw, ph + 10);
+    if (d) {
+      const label = 'dzień ' + d.day + ' — ' + fmtB(d.written) + ' zapisu, ' +
+        Math.round(d.holesRatio * 100) + '% dziur' + (d.gc ? ', GC ' + fmtB(d.gc) : '');
+      const lx = Math.min(W - 8, Math.max(80, selX + bw / 2));
+      text(ctx, label, lx, H - 9, { size: 11, color: C.info, align: 'center', weight: 600 });
+    }
+    return { px, pw, bw, n: S.length, py, ph };
+  }
+
+  function niceMax(v) {
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    const n = v / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+  }
+
+  NS.view = { draw, drawTimeline, C, rr, box, text, alpha, bar, spark, fmtB };
 
 })(window.SIM = window.SIM || {});

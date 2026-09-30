@@ -44,7 +44,31 @@ Czym sterujesz: typ plików (obrazy VM / kod / logi / zrzuty bazy), liczba plik�
 
 Przycisk **⇄ Porównaj strategie na tym zbiorze** liczy chunking raz, a potem przepuszcza te same granice przez wszystkie strategie — dzięki temu porównujesz indeks, a nie chunker. Wynik wychodzi w ~50 ms dla 47 tys. chunków.
 
-Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie (zrobione), **S4** GC, restore i oś czasu 30 dni, **S5** warstwa wyjaśnień.
+### Pełen cykl: 30 dni (`js/sim/timeline.js`)
+
+Przycisk **📅 Pełen cykl: 30 dni** przepuszcza przez symulator miesiąc pracy systemu tym samym chunkerem i indeksem co animacja, tylko bez malowania klatek (~1,3 s dla 40 plików × 30 dni):
+
+1. **codzienny backup** wszystkich plików — plik ma tyle kopii, ile dni ma retencję;
+2. **zmiana plików** — treść zmienia się naprawdę (nowe bajty w puli), więc chunking daje inne granice i na dysk ląduje prawdziwa delta; nowy plik wchodzi „od nowa", a nie dziedziczy po starym;
+3. **retencja w rotacji per-plik** — codziennie wygasa najstarsza kopia kolejnych plików, więc dziury powstają stopniowo, a nie jednym klifem;
+4. **GC** — gdy dziury przekroczą 25% dysku, żywe chunki jadą do nowych kontenerów, stare znikają. GC nie usuwa dziur, tylko przepisuje dane, więc wchodzi do licznika zapisu;
+5. **restore** — pliki odtwarzane są ze sklejonych bajtów kontenerów i **porównywane z oryginałem bajt po bajcie**.
+
+Populacja plików jest stała: pierwszego dnia wchodzą wszystkie, potem codziennie jeden znika z produkcji i jeden wchodzi z nową treścią. Bez tej rotacji retencja i GC nie miałyby czego sprzątać.
+
+Co widać w liczbach (24 pliki × 32 KB, chunki 1 KB, retencja 7 dni):
+
+| typ plików | oszczędność | write amplification | przebiegi GC |
+|---|---|---|---|
+| kod źródłowy | 12,3 : 1 | 1,17× | 2 |
+| obrazy VM | 15,1 : 1 | 1,10× | 1 |
+| logi | 4,7 : 1 | **1,52×** | 4 |
+
+Logi wygrywają w kategorii „najwięcej przepisuje”: dużo się zmieniają, więc retencja ciągle uwalnia chunki, którym zostaje ostatnia referencja, i GC ma co przenosić. Wykres pokazuje ząb — dziury rosną, GC je zabiera, rosną od nowa.
+
+**Write amplification** liczymy jako (zapis backupów + zapis GC) / (bajty, które faktycznie musiały powstać na dysku). Gdybyśmy podzielili to przez bajty wejściowe, wyszłaby oszczędność z dedupu, a nie koszt pisania.
+
+Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni (zrobione), **S5** warstwa wyjaśnień.
 
 ## Co w środku
 

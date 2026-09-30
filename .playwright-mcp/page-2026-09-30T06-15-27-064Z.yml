@@ -1,0 +1,427 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - heading "Maszyna dedupu" [level=1] [ref=e4]
+    - generic [ref=e5]: etap 3 · bajty → chunki → indeks → kontenery · * prędkość skanu w symulatorze, nie benchmark
+    - generic [ref=e6]: "pool: 2.6 MB · 40 plików"
+    - button "⏸ Pauza" [ref=e7] [cursor=pointer]
+    - button "↻ Nowy zbiór" [ref=e8] [cursor=pointer]
+    - link "← Prezentacja" [ref=e9] [cursor=pointer]:
+      - /url: index.html
+  - main [ref=e10]:
+    - complementary [ref=e11]:
+      - generic [ref=e12]:
+        - heading "Zbiór danych" [level=3] [ref=e13]
+        - generic [ref=e14]:
+          - generic [ref=e15]: typ plików
+          - combobox "typ plików" [ref=e17]:
+            - option "obrazy VM" [selected]
+            - option "kod źródłowy"
+            - option "logi"
+            - option "zrzuty bazy"
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - generic [ref=e20]: liczba plików
+            - status "liczba plików 40" [ref=e21]: "40"
+          - slider [ref=e22]: "40"
+        - generic [ref=e23]:
+          - generic [ref=e24]:
+            - generic [ref=e25]: redundancja
+            - status "redundancja 55" [ref=e26]: 55%
+          - slider [ref=e27]: "55"
+        - paragraph [ref=e28]: Redundancja = jaka część plików to kopie wcześniejszych. W poolu trafiają prawdziwe bajty, więc granice chunków liczy autentyczny gear hash.
+      - generic [ref=e29]:
+        - heading "Chunking" [level=3] [ref=e30]
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - generic [ref=e33]: liczba bitów maski
+            - status "liczba bitów maski 5" [ref=e34]: 5 bitów (32 B)
+          - slider [ref=e35]: "5"
+        - generic [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e38]: prędkość skanu
+            - status "prędkość skanu 2" [ref=e39]: 2×
+          - slider [ref=e40]: "2"
+      - generic [ref=e41]:
+        - heading "Indeks (rozdział 4)" [level=3] [ref=e42]
+        - generic [ref=e43]:
+          - generic [ref=e44]: strategia
+          - combobox "strategia" [ref=e46]:
+            - option "pełna tablica hash" [selected]
+            - option "Extreme Binning"
+            - option "SiLo"
+        - button "⇄ Porównaj strategie na tym zbiorze" [ref=e47] [cursor=pointer]
+        - 'button "📅 Pełen cykl: 30 dni" [active] [ref=e48] [cursor=pointer]'
+        - paragraph [ref=e49]: "30 dni prawdziwych backupów: pliki się zmieniają, kopie wygasają, dziury rosną, GC je sprząta. Na końcu odtwarzamy pliki i porównujemy bajt w bajt."
+      - generic [ref=e50]:
+        - heading "Kontenery i retencja" [level=3] [ref=e51]
+        - generic [ref=e52]:
+          - generic [ref=e53]:
+            - generic [ref=e54]: wielkość kontenera
+            - status "wielkość kontenera 32" [ref=e55]: "32"
+          - slider [ref=e56]: "32"
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - generic [ref=e59]: ile plików wygasa
+            - status "ile plików wygasa 6" [ref=e60]: "6"
+          - slider [ref=e61]: "6"
+        - button "⌫ Wygasz najstarsze pliki" [ref=e62] [cursor=pointer]
+        - paragraph [ref=e63]: Wygaśnięcie pliku zmniejsza liczbę referencji do jego chunków. Te, które stracą ostatnią referencję, zostawiają dziurę w kontenerze — miejsce, które trzeba kiedyś posprzątać (GC).
+      - generic [ref=e64]:
+        - heading "Pliki w kolejce" [level=3] [ref=e65]
+        - generic [ref=e66]:
+          - button "img-001.vmdk 48 KB oryginał" [ref=e67] [cursor=pointer]:
+            - generic [ref=e68]: img-001.vmdk
+            - generic [ref=e69]: 48 KB
+            - generic [ref=e70]: oryginał
+          - button "img-002.vmdk 48 KB kopia" [ref=e71] [cursor=pointer]:
+            - generic [ref=e72]: img-002.vmdk
+            - generic [ref=e73]: 48 KB
+            - generic [ref=e74]: kopia
+          - button "img-003.vmdk 48 KB kopia" [ref=e75] [cursor=pointer]:
+            - generic [ref=e76]: img-003.vmdk
+            - generic [ref=e77]: 48 KB
+            - generic [ref=e78]: kopia
+          - button "img-004.vmdk 48 KB kopia" [ref=e79] [cursor=pointer]:
+            - generic [ref=e80]: img-004.vmdk
+            - generic [ref=e81]: 48 KB
+            - generic [ref=e82]: kopia
+          - button "img-005.vmdk 48 KB kopia" [ref=e83] [cursor=pointer]:
+            - generic [ref=e84]: img-005.vmdk
+            - generic [ref=e85]: 48 KB
+            - generic [ref=e86]: kopia
+          - button "img-006.vmdk 48 KB kopia" [ref=e87] [cursor=pointer]:
+            - generic [ref=e88]: img-006.vmdk
+            - generic [ref=e89]: 48 KB
+            - generic [ref=e90]: kopia
+          - button "img-007.vmdk 48 KB kopia" [ref=e91] [cursor=pointer]:
+            - generic [ref=e92]: img-007.vmdk
+            - generic [ref=e93]: 48 KB
+            - generic [ref=e94]: kopia
+          - button "img-008.vmdk 48 KB kopia" [ref=e95] [cursor=pointer]:
+            - generic [ref=e96]: img-008.vmdk
+            - generic [ref=e97]: 48 KB
+            - generic [ref=e98]: kopia
+          - button "img-009.vmdk 48 KB kopia" [ref=e99] [cursor=pointer]:
+            - generic [ref=e100]: img-009.vmdk
+            - generic [ref=e101]: 48 KB
+            - generic [ref=e102]: kopia
+          - button "img-010.vmdk 48 KB kopia" [ref=e103] [cursor=pointer]:
+            - generic [ref=e104]: img-010.vmdk
+            - generic [ref=e105]: 48 KB
+            - generic [ref=e106]: kopia
+          - button "img-011.vmdk 48 KB kopia" [ref=e107] [cursor=pointer]:
+            - generic [ref=e108]: img-011.vmdk
+            - generic [ref=e109]: 48 KB
+            - generic [ref=e110]: kopia
+          - button "img-012.vmdk 48 KB kopia" [ref=e111] [cursor=pointer]:
+            - generic [ref=e112]: img-012.vmdk
+            - generic [ref=e113]: 48 KB
+            - generic [ref=e114]: kopia
+          - button "img-013.vmdk 48 KB kopia" [ref=e115] [cursor=pointer]:
+            - generic [ref=e116]: img-013.vmdk
+            - generic [ref=e117]: 48 KB
+            - generic [ref=e118]: kopia
+          - button "img-014.vmdk 48 KB kopia" [ref=e119] [cursor=pointer]:
+            - generic [ref=e120]: img-014.vmdk
+            - generic [ref=e121]: 48 KB
+            - generic [ref=e122]: kopia
+          - button "img-015.vmdk 48 KB kopia" [ref=e123] [cursor=pointer]:
+            - generic [ref=e124]: img-015.vmdk
+            - generic [ref=e125]: 48 KB
+            - generic [ref=e126]: kopia
+          - button "img-016.vmdk 48 KB kopia" [ref=e127] [cursor=pointer]:
+            - generic [ref=e128]: img-016.vmdk
+            - generic [ref=e129]: 48 KB
+            - generic [ref=e130]: kopia
+          - button "img-017.vmdk 48 KB kopia" [ref=e131] [cursor=pointer]:
+            - generic [ref=e132]: img-017.vmdk
+            - generic [ref=e133]: 48 KB
+            - generic [ref=e134]: kopia
+          - button "img-018.vmdk 48 KB kopia" [ref=e135] [cursor=pointer]:
+            - generic [ref=e136]: img-018.vmdk
+            - generic [ref=e137]: 48 KB
+            - generic [ref=e138]: kopia
+          - button "img-019.vmdk 48 KB kopia" [ref=e139] [cursor=pointer]:
+            - generic [ref=e140]: img-019.vmdk
+            - generic [ref=e141]: 48 KB
+            - generic [ref=e142]: kopia
+          - button "img-020.vmdk 48 KB kopia" [ref=e143] [cursor=pointer]:
+            - generic [ref=e144]: img-020.vmdk
+            - generic [ref=e145]: 48 KB
+            - generic [ref=e146]: kopia
+          - button "img-021.vmdk 48 KB kopia" [ref=e147] [cursor=pointer]:
+            - generic [ref=e148]: img-021.vmdk
+            - generic [ref=e149]: 48 KB
+            - generic [ref=e150]: kopia
+          - button "img-022.vmdk 48 KB kopia" [ref=e151] [cursor=pointer]:
+            - generic [ref=e152]: img-022.vmdk
+            - generic [ref=e153]: 48 KB
+            - generic [ref=e154]: kopia
+          - button "img-023.vmdk 48 KB oryginał" [ref=e155] [cursor=pointer]:
+            - generic [ref=e156]: img-023.vmdk
+            - generic [ref=e157]: 48 KB
+            - generic [ref=e158]: oryginał
+          - button "img-024.vmdk 48 KB oryginał" [ref=e159] [cursor=pointer]:
+            - generic [ref=e160]: img-024.vmdk
+            - generic [ref=e161]: 48 KB
+            - generic [ref=e162]: oryginał
+          - button "img-025.vmdk 48 KB oryginał" [ref=e163] [cursor=pointer]:
+            - generic [ref=e164]: img-025.vmdk
+            - generic [ref=e165]: 48 KB
+            - generic [ref=e166]: oryginał
+          - button "img-026.vmdk 48 KB oryginał" [ref=e167] [cursor=pointer]:
+            - generic [ref=e168]: img-026.vmdk
+            - generic [ref=e169]: 48 KB
+            - generic [ref=e170]: oryginał
+          - button "img-027.vmdk 48 KB oryginał" [ref=e171] [cursor=pointer]:
+            - generic [ref=e172]: img-027.vmdk
+            - generic [ref=e173]: 48 KB
+            - generic [ref=e174]: oryginał
+          - button "img-028.vmdk 48 KB oryginał" [ref=e175] [cursor=pointer]:
+            - generic [ref=e176]: img-028.vmdk
+            - generic [ref=e177]: 48 KB
+            - generic [ref=e178]: oryginał
+          - button "img-029.vmdk 48 KB oryginał" [ref=e179] [cursor=pointer]:
+            - generic [ref=e180]: img-029.vmdk
+            - generic [ref=e181]: 48 KB
+            - generic [ref=e182]: oryginał
+          - button "img-030.vmdk 48 KB oryginał" [ref=e183] [cursor=pointer]:
+            - generic [ref=e184]: img-030.vmdk
+            - generic [ref=e185]: 48 KB
+            - generic [ref=e186]: oryginał
+          - button "img-031.vmdk 48 KB oryginał" [ref=e187] [cursor=pointer]:
+            - generic [ref=e188]: img-031.vmdk
+            - generic [ref=e189]: 48 KB
+            - generic [ref=e190]: oryginał
+          - button "img-032.vmdk 48 KB oryginał" [ref=e191] [cursor=pointer]:
+            - generic [ref=e192]: img-032.vmdk
+            - generic [ref=e193]: 48 KB
+            - generic [ref=e194]: oryginał
+          - button "img-033.vmdk 48 KB oryginał" [ref=e195] [cursor=pointer]:
+            - generic [ref=e196]: img-033.vmdk
+            - generic [ref=e197]: 48 KB
+            - generic [ref=e198]: oryginał
+          - button "img-034.vmdk 48 KB oryginał" [ref=e199] [cursor=pointer]:
+            - generic [ref=e200]: img-034.vmdk
+            - generic [ref=e201]: 48 KB
+            - generic [ref=e202]: oryginał
+          - button "img-035.vmdk 48 KB oryginał" [ref=e203] [cursor=pointer]:
+            - generic [ref=e204]: img-035.vmdk
+            - generic [ref=e205]: 48 KB
+            - generic [ref=e206]: oryginał
+          - button "img-036.vmdk 48 KB oryginał" [ref=e207] [cursor=pointer]:
+            - generic [ref=e208]: img-036.vmdk
+            - generic [ref=e209]: 48 KB
+            - generic [ref=e210]: oryginał
+          - button "img-037.vmdk 48 KB oryginał" [ref=e211] [cursor=pointer]:
+            - generic [ref=e212]: img-037.vmdk
+            - generic [ref=e213]: 48 KB
+            - generic [ref=e214]: oryginał
+          - button "img-038.vmdk 48 KB oryginał" [ref=e215] [cursor=pointer]:
+            - generic [ref=e216]: img-038.vmdk
+            - generic [ref=e217]: 48 KB
+            - generic [ref=e218]: oryginał
+          - button "img-039.vmdk 48 KB oryginał" [ref=e219] [cursor=pointer]:
+            - generic [ref=e220]: img-039.vmdk
+            - generic [ref=e221]: 48 KB
+            - generic [ref=e222]: oryginał
+          - button "img-040.vmdk 48 KB oryginał" [ref=e223] [cursor=pointer]:
+            - generic [ref=e224]: img-040.vmdk
+            - generic [ref=e225]: 48 KB
+            - generic [ref=e226]: oryginał
+    - generic [ref=e227]:
+      - generic [ref=e230]:
+        - generic [ref=e231]:
+          - generic [ref=e232]: logiczne
+          - generic [ref=e233]: 1.9 MB
+        - generic [ref=e234]:
+          - generic [ref=e235]: zapisane
+          - generic [ref=e236]: 1.1 MB
+        - generic [ref=e237]:
+          - generic [ref=e238]: dedup ratio
+          - generic [ref=e239]: "1.76 : 1"
+        - generic [ref=e240]:
+          - generic [ref=e241]: chunki
+          - generic [ref=e242]: 45 051
+        - generic [ref=e243]:
+          - generic [ref=e244]: unikalne
+          - generic [ref=e245]: 25 962
+        - generic [ref=e246]:
+          - generic [ref=e247]: duplikaty
+          - generic [ref=e248]: 19 089
+        - generic [ref=e249]:
+          - generic [ref=e250]: indeks w RAM
+          - generic "0 seeków na dysk · 0 odczytów sekwencyjnych · 0 pominiętych duplikatów" [ref=e261]: 608 KB
+        - generic [ref=e252]:
+          - generic [ref=e253]: kontenery
+          - generic [ref=e254]: "35"
+        - generic [ref=e255]:
+          - generic [ref=e256]: dziury
+          - generic [ref=e257]: 0 B
+        - generic [ref=e258]:
+          - generic [ref=e259]: skan *
+          - generic [ref=e260]: 4223 MB/s*
+      - generic [ref=e263]:
+        - button "✕" [ref=e264] [cursor=pointer]
+        - 'heading "Pełen cykl: 30 dni" [level=2] [ref=e265]'
+        - generic [ref=e266]:
+          - paragraph [ref=e267]: "Miesiąc pracy systemu na tych samych danych, które widzisz w symulatorze: codziennie backup wszystkich plików, pliki się zmieniają, najstarsze kopie wygasają po 30 dniach, a gdy dziury przekroczą 25% dysku, startuje GC. Policzone w 1324 ms."
+          - paragraph [ref=e269]: Kliknij słupek, żeby zobaczyć, co się działo danego dnia.
+          - heading "Dzień 30" [level=3] [ref=e270]
+          - generic [ref=e271]:
+            - generic [ref=e272]:
+              - generic [ref=e273]: plików w backupie
+              - generic [ref=e274]: "40"
+            - generic [ref=e275]:
+              - generic [ref=e276]: zapisane na dysk
+              - generic [ref=e277]: 32 KB
+            - generic [ref=e278]:
+              - generic [ref=e279]: delta do zapisania
+              - generic [ref=e280]: 1.8 MB
+            - generic [ref=e281]:
+              - generic [ref=e282]: dedup ratio dnia
+              - generic [ref=e283]: "60.6 : 1"
+            - generic [ref=e284]:
+              - generic [ref=e285]: kontenery
+              - generic [ref=e286]: "51"
+            - generic [ref=e287]:
+              - generic [ref=e288]: dziury
+              - generic [ref=e289]: 16%
+            - generic [ref=e290]:
+              - generic [ref=e291]: wygaśnięte kopie
+              - generic [ref=e292]: 29 KB
+            - generic [ref=e293]:
+              - generic [ref=e294]: GC tego dnia
+              - generic [ref=e295]: —
+            - generic [ref=e296]:
+              - generic [ref=e297]: indeks w RAM
+              - generic [ref=e298]: 1.0 MB
+          - paragraph [ref=e299]: "W tym dniu: img-023.vmdk znika z produkcji · img-023.vmdk wchodzi do produkcji · wygasają 40 kopii, zwalnia się 29 KB · 4 plików zmienionych od wczoraj."
+          - heading "Bilans miesiąca" [level=3] [ref=e300]
+          - table [ref=e301]:
+            - rowgroup [ref=e302]:
+              - row [ref=e303]:
+                - rowheader "bajty wchodzące (suma 30 dni)" [ref=e304]
+                - cell "56.3 MB" [ref=e305]
+              - row [ref=e306]:
+                - rowheader "zapisane przez backupy" [ref=e307]
+                - cell "2.0 MB" [ref=e308]
+              - row [ref=e309]:
+                - rowheader "przepisane przez GC" [ref=e310]
+                - cell "1.3 MB" [ref=e311]
+              - row [ref=e312]:
+                - rowheader "dedup ratio (bez GC)" [ref=e313]
+                - 'cell "27.9 : 1" [ref=e314]'
+              - row [ref=e315]:
+                - rowheader "write amplification" [ref=e316]
+                - cell "0.06×" [ref=e317]
+              - row [ref=e318]:
+                - rowheader "przebiegi GC" [ref=e319]
+                - cell "1 (28160 chunków)" [ref=e320]
+              - row [ref=e321]:
+                - rowheader "kopie wygaszone" [ref=e322]
+                - cell "920" [ref=e323]
+              - row [ref=e324]:
+                - rowheader "żywe bajty na dysku" [ref=e325]
+                - cell "1.6 MB z 1.6 MB" [ref=e326]
+              - row [ref=e327]:
+                - rowheader "indeks w RAM na koniec" [ref=e328]
+                - cell "1.0 MB (43 972 wpisów)" [ref=e329]
+          - paragraph [ref=e330]: "Na każdy bajt wejściowy przypada 0.06 bajtu zapisu: backupy zapisały 2.0 MB, a GC przepisał jeszcze 1.3 MB (39% całości zapisu). Im częściej pliki się zmieniają i im krótsza retencja, tym więcej bajtów system przepisuje w tym samym miesiącu — i dlatego retencja ma znaczenie dla wydajności, a nie tylko dla dysku."
+          - heading "Kiedy GC włączał się w miesiącu" [level=3] [ref=e331]
+          - table [ref=e332]:
+            - rowgroup [ref=e333]:
+              - row [ref=e334]:
+                - columnheader "dzień" [ref=e335]
+                - columnheader "kontenery" [ref=e336]
+                - columnheader "przepisane" [ref=e337]
+                - columnheader "chunki" [ref=e338]
+                - columnheader "dziury przed" [ref=e339]
+                - columnheader "dziury po" [ref=e340]
+            - rowgroup [ref=e341]:
+              - row [ref=e342]:
+                - rowheader "dzień 20" [ref=e343]
+                - cell "56 → 42" [ref=e344]
+                - cell "1.3 MB" [ref=e345]
+                - cell "28 160" [ref=e346]
+                - cell "25%" [ref=e347]
+                - cell "0%" [ref=e348]
+          - paragraph [ref=e349]: GC nie usuwa dziur, tylko przenosi żywe chunki do nowych kontenerów. Dlatego w miesiącu, w którym dużo się zmienia, na dysk trafia więcej bajtów niż w samych backupach — to jest write amplification i dlatego progi uruchamiania GC są tak ostrożne.
+          - 'heading "Restore: odtworzone pliki" [level=3] [ref=e350]'
+          - paragraph [ref=e351]: Odtwarzamy pliki z różnych dni i porównujemy bajty z oryginałem. Jeśli restore ma być warty, musi dać bajt w bajt — nie „tyle samo długości”.
+          - table [ref=e352]:
+            - rowgroup [ref=e353]:
+              - row [ref=e354]:
+                - columnheader "plik" [ref=e355]
+                - columnheader "dzień" [ref=e356]
+                - columnheader "rozmiar" [ref=e357]
+                - columnheader "chunki" [ref=e358]
+                - columnheader "kontenery" [ref=e359]
+                - columnheader "seeki" [ref=e360]
+                - columnheader "zgodność" [ref=e361]
+            - rowgroup [ref=e362]:
+              - row [ref=e363]:
+                - rowheader "img-001.vmdk" [ref=e364]
+                - cell "30" [ref=e365]
+                - cell "48 KB" [ref=e366]
+                - cell "1214" [ref=e367]
+                - cell "16" [ref=e368]
+                - cell "652" [ref=e369]
+                - cell "✓ bajt w bajt" [ref=e370]
+              - row [ref=e371]:
+                - rowheader "img-022.vmdk" [ref=e372]
+                - cell "24" [ref=e373]
+                - cell "48 KB" [ref=e374]
+                - cell "1153" [ref=e375]
+                - cell "4" [ref=e376]
+                - cell "11" [ref=e377]
+                - cell "✓ bajt w bajt" [ref=e378]
+              - row [ref=e379]:
+                - rowheader "img-005.vmdk" [ref=e380]
+                - cell "20" [ref=e381]
+                - cell "48 KB" [ref=e382]
+                - cell "1131" [ref=e383]
+                - cell "2" [ref=e384]
+                - cell "2" [ref=e385]
+                - cell "✓ bajt w bajt" [ref=e386]
+              - row [ref=e387]:
+                - rowheader "img-017.vmdk" [ref=e388]
+                - cell "18" [ref=e389]
+                - cell "48 KB" [ref=e390]
+                - cell "1153" [ref=e391]
+                - cell "4" [ref=e392]
+                - cell "7" [ref=e393]
+                - cell "✓ bajt w bajt" [ref=e394]
+              - row [ref=e395]:
+                - rowheader "img-029.vmdk" [ref=e396]
+                - cell "16" [ref=e397]
+                - cell "48 KB" [ref=e398]
+                - cell "1173" [ref=e399]
+                - cell "5" [ref=e400]
+                - cell "14" [ref=e401]
+                - cell "✓ bajt w bajt" [ref=e402]
+              - row [ref=e403]:
+                - rowheader "img-001.vmdk" [ref=e404]
+                - cell "14" [ref=e405]
+                - cell "48 KB" [ref=e406]
+                - cell "1225" [ref=e407]
+                - cell "14" [ref=e408]
+                - cell "672" [ref=e409]
+                - cell "✓ bajt w bajt" [ref=e410]
+              - row [ref=e411]:
+                - rowheader "img-016.vmdk" [ref=e412]
+                - cell "12" [ref=e413]
+                - cell "48 KB" [ref=e414]
+                - cell "1149" [ref=e415]
+                - cell "4" [ref=e416]
+                - cell "9" [ref=e417]
+                - cell "✓ bajt w bajt" [ref=e418]
+              - row [ref=e419]:
+                - rowheader "img-010.vmdk" [ref=e420]
+                - cell "8" [ref=e421]
+                - cell "48 KB" [ref=e422]
+                - cell "1141" [ref=e423]
+                - cell "4" [ref=e424]
+                - cell "4" [ref=e425]
+                - cell "✓ bajt w bajt" [ref=e426]
+          - paragraph [ref=e427]: Wszystkie próbki zgadzają się co do bajtu. Plik czytamy w kolejności zapisu chunków, więc w obrębie jednego kontenera idziemy sekwencyjnie — seeki to zmiany kontenera. Przy wielu kontenerach na dysku to właśnie one bolą i dlatego dedup układa chunki blisko siebie.

@@ -8,7 +8,8 @@
       bits: 5, fastCDC: true, speed: 1, containerKB: 32, retention: 6,
       indexKind: 'hash', segChunks: 16
     },
-    run: null, playing: true, dirty: true
+    run: null, playing: true, dirty: true,
+    tl: { res: null, sel: 0, layout: null, busy: false }
   };
 
   const el = {};
@@ -21,6 +22,7 @@
     ctx = cv.getContext('2d', { alpha: false });
     ['cfgType', 'cfgFiles', 'cfgRedund', 'cfgBits', 'cfgSpeed', 'cfgCont', 'cfgRet',
       'cfgIndex', 'cfgSeg', 'cmpBtn', 'cmpPanel', 'cmpBody', 'cmpClose',
+      'tlBtn', 'tlPanel', 'tlBody', 'tlClose',
       'files', 'btnPlay', 'btnReset', 'btnExpire', 'stLogical', 'stWritten', 'stRatio',
       'stChunks', 'stUnique', 'stDups', 'stIdx', 'stCont', 'stHoles', 'stFps', 'poolInfo'
     ].forEach(k => { el[k] = $(k); });
@@ -52,8 +54,13 @@
     syncSeg();
 
     el.cmpBtn.addEventListener('click', openCompare);
+    el.tlBtn.addEventListener('click', openTimeline);
+    el.tlClose.addEventListener('click', closeTimeline);
     el.cmpClose.addEventListener('click', closeCompare);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCompare(); });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      closeCompare(); closeTimeline();
+    });
 
     bindRange('cfgCont', 'containerKB', v => { state.cfg.containerKB = v; }, () => { rebuild(); });
     bindRange('cfgRet', 'retention', v => { state.cfg.retention = v; }, null);
@@ -126,6 +133,158 @@
     void cur;
   }
   function closeCompare() { el.cmpPanel.hidden = true; }
+
+
+  /* ---------- pełen cykl: 30 dni ---------- */
+
+  /* Liczymy 30 dni tym samym chunkerem i indeksem co animacja, tylko
+     bez malowania. Dlatego wynik na wykresie zgadza się z tym, co
+     widać w symulatorze dzień po dniu. */
+  function openTimeline() {
+    el.tlPanel.hidden = false;
+    if (state.tl.busy) return;
+    state.tl.busy = true;
+    el.tlBody.innerHTML = '<p class="lead">Liczę 30 dni: ' + state.cfg.files + ' plików × 30 dni, ' +
+      'ten sam chunker i indeks co w animacji. Chwilka…</p>';
+    requestAnimationFrame(() => setTimeout(() => {
+      const c = state.cfg;
+      const t0 = performance.now();
+      const res = SIM.timeline.runBatch({
+        type: c.type, files: c.files, fileKB: c.fileKB, redundancy: c.redundancy,
+        bits: c.bits, fastCDC: c.fastCDC, indexKind: c.indexKind, segChunks: c.segChunks,
+        containerKB: c.containerKB, retention: c.retention, days: 30
+      });
+      res.ms = performance.now() - t0;
+      state.tl.res = res;
+      state.tl.sel = res.series.length - 1;
+      state.tl.busy = false;
+      renderTimeline();
+    }, 40));
+  }
+
+  function closeTimeline() { el.tlPanel.hidden = true; }
+
+  function renderTimeline() {
+    const res = state.tl.res;
+    if (!res) return;
+    const S = res.series, s = res.summary, d = S[state.tl.sel];
+    const fmtB = SIM.view.fmtB;
+    const events = res.events.filter(e => e.day === d.day - 1);
+    const gcLog = res.run.gcLog;
+    const restored = SIM.timeline.restoreSamples(res);
+    const okAll = restored.every(r => r.verified);
+
+    el.tlBody.innerHTML =
+      '<p class="lead">Miesiąc pracy systemu na tych samych danych, które widzisz w symulatorze: ' +
+      'codziennie backup wszystkich plików, pliki się zmieniają, najstarsze kopie wygasają po ' +
+      s.days + ' dniach, a gdy dziury przekroczą 25% dysku, startuje GC. Policzone w ' +
+      Math.round(res.ms) + ' ms.</p>' +
+      '<canvas id="tlCv" style="width:100%;height:250px;display:block;margin:6px 0 4px"></canvas>' +
+      '<p class="note" style="margin-top:0">Kliknij słupek, żeby zobaczyć, co się działo danego dnia.</p>' +
+
+      '<h3 style="margin:18px 0 8px;font-size:13px">Dzień ' + d.day + '</h3>' +
+      '<div class="stats" style="margin:0 0 6px">' +
+      stat('plików w backupie', String(d.files)) +
+      stat('zapisane na dysk', fmtB(d.written), 'var(--new)') +
+      stat('delta do zapisania', fmtB(Math.max(0, d.logical - d.written)), 'var(--save)') +
+      stat('dedup ratio dnia', d.ratio ? d.ratio.toFixed(1) + ' : 1' : '—', 'var(--save)') +
+      stat('kontenery', String(d.containers)) +
+      stat('dziury', Math.round(d.holesRatio * 100) + '%', 'var(--bad)') +
+      stat('wygaśnięte kopie', fmtB(d.expired), 'var(--ref)') +
+      stat('GC tego dnia', d.gc ? fmtB(d.gc) : '—', 'var(--bad)') +
+      stat('indeks RAM', fmtB(d.indexRam), 'var(--violet)') +
+      '</div>' +
+      (events.length
+        ? '<p class="note" style="margin:6px 0 0">W tym dniu: ' +
+          events.map(e => e.text).join(' · ') + '.</p>'
+        : '') +
+
+      '<h3 style="margin:20px 0 8px;font-size:13px">Bilans miesiąca</h3>' +
+      '<table><tbody>' +
+      row('bajty wchodzące (suma 30 dni)', fmtB(s.logical), '') +
+      row('zapisane przez backupy', fmtB(s.stored), 'var(--new)') +
+      row('przepisane przez GC', fmtB(s.rewritten), 'var(--bad)') +
+      row('oszczędność (wejście / zapis)', s.ratio.toFixed(1) + ' : 1', 'var(--save)') +
+      row('write amplification (zapis / nowe bajty)', s.wa.toFixed(2) + '×', 'var(--bad)') +
+      row('udział GC w zapisie', Math.round(s.gcShare * 100) + '%', 'var(--bad)') +
+      row('przebiegi GC', String(s.gcRuns) + ' (' + s.gcChunks + ' chunków)', '') +
+      row('kopie wygaszone', fmt(s.expiredCopies), '') +
+      row('żywe bajty na dysku', (s.live / 1048576).toFixed(2) + ' MB z ' + (s.disk / 1048576).toFixed(2) + ' MB', '') +
+      row('indeks w RAM na koniec', fmtB(s.indexRam) + ' (' + fmt(s.indexEntries) + ' wpisów)', 'var(--violet)') +
+      '</tbody></table>' +
+      '<p class="note">' + waExplain(s) + '</p>' +
+
+      (gcLog.length
+        ? '<h3 style="margin:20px 0 8px;font-size:13px">Kiedy GC włączał się w miesiącu</h3>' +
+          '<table><thead><tr><th>dzień</th><th>kontenery</th><th>przepisane</th><th>chunki</th><th>dziury przed</th><th>dziury po</th></tr></thead><tbody>' +
+          gcLog.map(g => '<tr><th>dzień ' + (g.day + 1) + '</th><td>' + g.before.containers + ' → ' +
+            g.after.containers + '</td><td>' + fmtB(g.written) + '</td><td>' + fmt(g.chunks) +
+            '</td><td>' + Math.round(g.before.holes / Math.max(1, g.before.bytes) * 100) + '%</td><td>' +
+            Math.round(g.after.holes / Math.max(1, g.after.bytes) * 100) + '%</td></tr>').join('') +
+          '</tbody></table>' +
+          '<p class="note">GC nie usuwa dziur, tylko przenosi żywe chunki do nowych kontenerów. ' +
+          'Dlatego w miesiącu, w którym dużo się zmienia, na dysk trafia więcej bajtów niż w samych backupach — ' +
+          'to jest write amplification i dlatego progi uruchamiania GC są tak ostrożne.</p>'
+        : '<p class="note">GC nie ruszył: dziury nie przekroczyły 25% dysku. W tym miesiącu pliki prawie się nie zmieniały, ' +
+          'więc retencja uwalniała głównie kopie bez wyłącznych chunków.</p>') +
+
+      '<h3 style="margin:20px 0 8px;font-size:13px">Restore: odtworzone pliki</h3>' +
+      '<p class="lead" style="margin:0 0 10px">Odtwarzamy pliki z różnych dni i <b>porównujemy bajty z oryginałem</b>. ' +
+      'Jeśli restore ma być warty, musi dać bajt w bajt — nie „tyle samo długości”.</p>' +
+      '<table><thead><tr><th>plik</th><th>dzień</th><th>rozmiar</th><th>chunki</th>' +
+      '<th>kontenery</th><th>seeki</th><th>zgodność</th></tr></thead><tbody>' +
+      restored.map(r => '<tr><th>' + r.file + '</th><td>' + (r.day + 1) + '</td><td>' + fmtB(r.bytes) +
+        '</td><td>' + fmt(r.chunks) + '</td><td>' + r.containers + '</td><td>' + r.seeks + '</td>' +
+        '<td class="' + (r.verified ? 'best' : '') + '">' + (r.verified ? '✓ bajt w bajt' : '✗ RÓŻNICA') +
+        '</td></tr>').join('') +
+      '</tbody></table>' +
+      '<p class="note">' + (okAll
+        ? 'Wszystkie próbki zgadzają się co do bajtu. Plik czytamy w kolejności zapisu chunków, więc w obrębie jednego kontenera idziemy sekwencyjnie — seek liczymy przy zmianie kontenera. Plik zmieniony w dniu ' +
+          (d.day) + ' ma część chunków sprzed wielu dni i część nowych, więc przy odtwarzaniu skacze między starymi i nowymi kontenerami: stąd różnica między plikami w tabeli. Uwaga do skali: animacja używa chunków ' +
+          (1 << state.cfg.bits) + ' B, żeby dało się je zobaczyć na ekranie, a liczba seeków rośnie odwrotnie do wielkości chunka — przy chunkach 8 KB byłaby kilkadziesiąt razy mniejsza. Dlatego tu liczy się różnica między plikami, nie bezwzględna wartość.'
+        : 'Uwaga: część plików nie odtwarza się identycznie. To nie jest miły komunikat, ale właśnie po to restore sprawdzamy bajt po bajcie.') +
+      '</p>';
+
+    const cv = $('tlCv');
+    const W = cv.clientWidth || 1100;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = W * dpr; cv.height = 250 * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.tl.layout = SIM.view.drawTimeline(ctx, W, 250, res, state.tl.sel);
+
+    cv.onclick = ev => {
+      const r = cv.getBoundingClientRect();
+      const x = ev.clientX - r.left;
+      const L = state.tl.layout;
+      if (!L) return;
+      const i = Math.floor((x - L.px) / L.bw);
+      if (i >= 0 && i < L.n) { state.tl.sel = i; renderTimeline(); }
+    };
+  }
+
+  function stat(label, value, color) {
+    return '<div class="stat"><div class="l">' + label + '</div><div class="v"' +
+      (color ? ' style="color:' + color + ';font-size:14px"' : ' style="font-size:14px"') +
+      '>' + value + '</div></div>';
+  }
+  function row(a, b, color) {
+    return '<tr><th>' + a + '</th><td' + (color ? ' style="color:' + color + '"' : '') +
+      '>' + b + '</td></tr>';
+  }
+
+  function waExplain(s) {
+    if (s.rewritten === 0) {
+      return 'GC jeszcze nic nie przepisał, więc write amplification wynosi 1,00× — na dysku leży ' +
+        'dokładnie tyle, ile musiało być zapisane. Cała oszczędność (' + s.ratio.toFixed(1) +
+        ' : 1) pochodzi z dedupu.';
+    }
+    return 'Backupy zapisały ' + SIM.view.fmtB(s.stored) + ' nowych bajtów, a GC przepisał jeszcze ' +
+      SIM.view.fmtB(s.rewritten) + '. Na każdy bajt, który faktycznie musiał powstać na dysku, ' +
+      'system zapisał ' + s.wa.toFixed(2) + ' bajtu. Im częściej pliki się zmieniają i im krótsza ' +
+      'retencja, tym więcej wynosi ta liczba — dlatego progi uruchamiania GC są tak ostrożne, ' +
+      'a retencja ma znaczenie dla wydajności, nie tylko dla miejsca na dysku.';
+  }
 
   function bindRange(id, key, set, onChange) {
     const input = $(id), out = $(id + 'Val');
