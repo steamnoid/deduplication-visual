@@ -4,3 +4,4 @@ posters/_sheet.png
 .DS_Store
 *.log
 .playwright-mcp/
+.commitmsg.txt
