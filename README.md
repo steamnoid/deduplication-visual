@@ -68,7 +68,33 @@ Logi wygrywają w kategorii „najwięcej przepisuje”: dużo się zmieniają, 
 
 **Write amplification** liczymy jako (zapis backupów + zapis GC) / (bajty, które faktycznie musiały powstać na dysku). Gdybyśmy podzielili to przez bajty wejściowe, wyszłaby oszczędność z dedupu, a nie koszt pisania.
 
-Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni (zrobione), **S5** warstwa wyjaśnień.
+### Kompresja delta (`js/sim/delta.js`)
+
+Po dedupie chunk, którego nie ma w indeksie, i tak prawie nigdy nie jest nowy w całości — zwykle jest przesuniętą albo lekko zmienioną kopią czegoś, co już leży na dysku. Delta zapisuje operacje `COPY` (skąd skopiować z bajtu docelowego) i `INS` (bajty wstawiane, niesione wewnątrz rekordu). Rekord jest samowystarczalny: restore po miesiącu składa go z samego rekordu i bajtu docelowego, bez dostępu do pliku źródłowego.
+
+Dopasowanie: okno 16 B podpisane gearem, kotwice w bajcie docelowym, dopasowanie rozszerzane w przód i w tył. Deltas zapisujemy tylko wtedy, gdy rekord jest mniejszy niż 85% surowych bajtów — nagłówek i operacje kosztują.
+
+**Wybór celu to 90% sukcesu.** Treść sprzed zmiany siedzi w tym samym miejscu pliku, przesuwa się tylko granice chunków, więc celem jest chunk z poprzedniej wersji pliku o tym samym indeksie. Wariant „ostatni zapisany chunk" wybiera cel na ślepo i prawie nic nie ściska:
+
+| typ plików | bez delty | cel po pozycji | cel: ostatnie chunki |
+|---|---|---|---|
+| obrazy VM | 687 KB | **471 KB** (−31%) | 663 KB (−3%) |
+| kod źródłowy | 892 KB | **699 KB** (−22%) | 866 KB (−3%) |
+| logi | 1050 KB | **981 KB** (−7%) | 1031 KB (−2%) |
+
+Na 30 dniach z retencją 7 dni: 2341 prób, 164 zapisane delty, 73% oszczędności na bajtach objętych deltą — ale tylko 7% mniej zapisu w skali miesiąca, bo większość nowych chunków naprawdę jest nowa i delta na nich nie ma czego skrócić.
+
+**Łańcuchy delt to realne ryzyko.** Delta wskazuje na inny chunk, więc gdy retencja zgubi ostatnią referencję do celu, fragment zostaje na bajtach, które GC zaraz usunie. Mamy dwa uczciwe warianty i symulator pokazuje oba:
+
+| | rozwijamy łańcuchy | nie zabezpieczamy |
+|---|---|---|
+| zapis w miesiącu | 2,0 MB | 1,7 MB |
+| dodatkowy zapis na rozwijanie | 320 KB (197 chunków) | 0 |
+| pliki nie do odtworzenia po wymuszonym GC | 0 | **22** |
+
+Symulator nie udaje, że problemu nie ma: przycisk **🧹 Wymuś GC i sprawdź restore** zbiera wszystko, co straciło ostatnią referencję, i przelicza restore — część plików przechodzi z ✓ na ✗ RÓŻNICA. Rezygnacja z zabezpieczenia oszczędza 300 KB zapisu i psuje 22 pliki, których już nie da się złożyć.
+
+Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni, **S5** kompresja delta (zrobione), **S6** warstwa wyjaśnień.
 
 ## Co w środku
 

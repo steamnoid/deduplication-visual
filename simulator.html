@@ -166,6 +166,30 @@
           <input type="range" id="cfgSeg" min="4" max="64" step="4" value="16">
         </label>
         <button class="btn" id="cmpBtn" style="width:100%;margin-top:2px">⇄ Porównaj strategie na tym zbiorze</button>
+        <div class="grp" style="margin-top:14px">
+          <h3>Delta (rozdział 7)</h3>
+          <label class="ctl">
+            <div class="row"><span class="n">kompresja delta</span></div>
+            <select id="cfgDelta">
+              <option value="off">wyłączona — tylko surowe bajty</option>
+              <option value="index">włączona — cel po pozycji w pliku</option>
+              <option value="recent">włączona — cel: ostatnie chunki</option>
+            </select>
+          </label>
+          <label class="ctl" id="rowChain">
+            <div class="row"><span class="n">łańcuchy delt</span></div>
+            <select id="cfgChain">
+              <option value="expand">rozwijamy przed utratą celu</option>
+              <option value="off">nie zabezpieczamy — pliki mogą zniknąć</option>
+            </select>
+          </label>
+          <p style="margin:8px 0 0;font-size:11px;color:var(--dim);line-height:1.45">
+            Delta zapisuje różnicę względem bajtu, który już jest na dysku.
+            Liczy się tylko na oś czasu — przy 32-bajtowych chunkach animacji
+            każda delta jest droższa od surowych bajtów.
+          </p>
+        </div>
+
         <button class="btn" id="tlBtn" style="width:100%;margin-top:6px">📅 Pełen cykl: 30 dni</button>
         <p style="margin:8px 0 0;font-size:11px;color:var(--dim);line-height:1.45">
           30 dni prawdziwych backupów: pliki się zmieniają, kopie wygasają, dziury rosną,
@@ -230,6 +254,7 @@
 </div>
 
 <script src="js/sim/engine.js"></script>
+<script src="js/sim/delta.js"></script>
 <script src="js/sim/indices.js"></script>
 <script src="js/sim/compare.js"></script>
 <script src="js/sim/timeline.js"></script>

@@ -1,0 +1,38 @@
+Maszyna dedupu — etap 5: kompresja delta z wyborem celu i łańcuchami
+
+Delta po dedupie (rozdział 7): zamiast surowych bajtów zapisujemy rekord
+z operacjami COPY (skąd skopiować z bajtu docelowego) i INS (bajty
+wstawiane, niesione wewnątrz rekordu). Rekord jest samowystarczalny —
+restore składa go z samego rekordu i bajtu docelowego, bez dostępu do
+pliku źródłowego.
+
+Dopasowanie: okno 16 B podpisane gearem, kotwice w bajcie docelowym,
+rozszerzanie dopasowania w przód i w tył. Delty zapisujemy tylko wtedy,
+gdy rekord jest mniejszy niż 85% surowych bajtów — nagłówek i operacje
+kosztują, a na małym chunku delta bywa droższa niż bajty.
+
+Wybór celu okazał się najważniejszą częścią. Cel po pozycji w pliku
+daje 31% mniej zapisu na obrazach VM, cel „ostatni zapisany chunk" tylko
+3%. Ten sam miesiąc, te same bajty, inny strzał. Panel 30 dni liczy oba
+warianty i pokazuje je obok siebie.
+
+Łańcuchy: delta wskazuje na inny chunk, więc retencja gubiąca ostatnią
+referencję do celu zostawia fragment na bajtach, które GC zaraz usunie.
+Dwa warianty, oba zmierzone: rozwijanie łańcuchów przed utratą celu
+kosztuje 320 KB zapisu i utrzymuje 100% restore; rezygnacja
+z zabezpieczenia oszczędza te 300 KB i psuje 22 pliki, których już nie
+da się złożyć. Przycisk wymuszonego GC przelicza restore i pokazuje,
+które pliki padają.
+
+Oś czasu liczy się teraz z chunkami 1 KB zamiast 32 B: przy 32 B każdy
+rekord delta jest droższy od surowych bajtów i opcjonalność byłaby
+czysto teoretyczna. Animacja zostaje przy 32 B, bo granice muszą być
+widoczne na ekranie.
+
+Po drodze naprawione cztery błędy, które uczciwie kłamały:
+* operacje INS nie zapisywały literalnych bajtów — round-trip przechodził
+  tylko dlatego, że test podawał źródło z powrotem do dekodera
+* cel delty brał bieżące chunky dnia zamiast wczorajszych
+* pętla po kandydatach miała i++ zamiast i-- i wychodziła poza tablicę
+* cache odczytów nie był czyszczony przy sprzątaniu, więc restore po GC
+  składał plik z bajtów, których już nie ma w kontenerach

@@ -49,10 +49,15 @@
     const c = Object.assign({
       type: 'code', files: 40, fileKB: 48, redundancy: 0.55,
       versions: 2, retention: 7, gcThreshold: 0.25, churn: null,
-      expiryPerDay: 1, birthsPerDay: 1, deathsPerDay: 1, bits: 5, fastCDC: true,
+      expiryPerDay: 1, birthsPerDay: 1, deathsPerDay: 1, fastCDC: true,
       indexKind: 'hash', segChunks: 16, containerKB: 256, seed: 12345,
-      keepBytes: true
+      keepBytes: true, delta: false, deltaPick: 'index', deltaMin: 256, deltaTargets: 4,
+      chainGuard: 'expand'
     }, cfg);
+    // Oś czasu liczymy z chunkami ~1 KB. Animacja celowo używa 32 B,
+    // żeby granice chunków były widoczne na ekranie, ale przy 32 B
+    // delta nie ma o czym mówić — każdy chunk jest mniejszy niż narzut.
+    c.bits = Math.max(10, c.bits || 5);
 
     const ds = sim.buildDataset({
       type: c.type, files: c.files, fileKB: c.fileKB,
@@ -62,7 +67,9 @@
 
     const run = new sim.Run(ds, {
       bits: c.bits, fastCDC: c.fastCDC, indexKind: c.indexKind,
-      segChunks: c.segChunks, containerKB: c.containerKB, keepBytes: c.keepBytes
+      segChunks: c.segChunks, containerKB: c.containerKB, keepBytes: c.keepBytes,
+      delta: c.delta, deltaPick: c.deltaPick, deltaMin: c.deltaMin, deltaTargets: c.deltaTargets,
+      chainGuard: c.chainGuard
     });
 
     const rnd = (function (a) {
@@ -91,6 +98,7 @@
       const t = birthOrder[i]; birthOrder[i] = birthOrder[j]; birthOrder[j] = t;
     }
     let cursor = 0;
+    let lastBroken = 0;
     const aliveCount = () => live.reduce((a, f) => a + (!f.dead && f.born !== undefined ? 1 : 0), 0);
 
     for (let d = 0; d < days; d++) {
@@ -170,7 +178,16 @@
       if (changed) events.push({ day: d, kind: 'change', text: changed + ' plików zmienionych od wczoraj' });
       }
 
-      // 6) GC: dopiero gdy dziury naprawdę bolą
+      // 6) retencja mogła zabić bajt docelowy delty — wtedy plik zostaje,
+      // a odtworzyć się nie da. Liczymy to, zamiast udawać, że nic się nie stało.
+      const brokenNow = run.checkChains();
+      if (brokenNow > lastBroken) {
+        events.push({ day: d, kind: 'chain',
+          text: 'retencja zerwała ' + (brokenNow - lastBroken) + ' łańcuchów delta — te pliki nie odtworzą się' });
+      }
+      lastBroken = brokenNow;
+
+      // 7) GC: dopiero gdy dziury naprawdę bolą
       let gcRec = null;
       const holesRatio = run.diskBytes ? run.holesBytes / run.diskBytes : 0;
       if (holesRatio > c.gcThreshold) {
@@ -188,6 +205,9 @@
         dups: run.st.dups - before.dups,
         unique: run.st.unique - before.unique,
         falseNeg: run.st.falseNeg - before.falseNeg,
+        deltaBytes: run.st.deltaBytes - before.deltaBytes,
+        deltaRaw: run.st.deltaRaw - before.deltaRaw,
+        deltaChunks: run.st.deltaChunks - before.deltaChunks,
         expired: freed,
         expiredChunks: droppedChunks,
         gc: gcRec ? gcRec.written : 0,
@@ -233,6 +253,18 @@
       indexRam: run.indexBytes,
       indexEntries: run.indexEntries,
       falseNeg: run.st.falseNeg,
+      deltaChunks: run.st.deltaChunks,
+      deltaTries: run.st.deltaTries,
+      deltaBytes: run.st.deltaBytes,
+      deltaRaw: run.st.deltaRaw,
+      deltaSaved: run.st.deltaRaw - run.st.deltaBytes,
+      chainsBroken: run.st.chainsBroken,
+      brokenNow: run.checkChains(),
+      brokenFiles: run.brokenFiles(),
+      chainRewrites: run.st.chainRewrites,
+      chainBytes: run.st.chainBytes,
+      chainMaxDepth: run.st.chainMaxDepth,
+      chunkBytes: 1 << c.bits,
       expiredBytes: run.st.expiredBytes,
       expiredChunks: run.st.expiredChunks,
       expiredCopies: run.expiredKeys.size
@@ -241,26 +273,39 @@
     return { ds, run, series, events, summary, retention: c.retention };
   }
 
-  /* Próbka restore: kilka plików z różnych dni, żeby zobaczyć,
-     ile kontenerów trzeba dotknąć i czy bajty się zgadzają. */
-  function restoreSamples(result, perDay) {
+  /* Próbki restore: kilka plików z różnych dni. Jeśli w systemie są
+     zerwane łańcuchy, dokładamy z nich po cztery — inaczej tabela
+     wyglądałaby na zdrową, choć część plików jest nie do odtworzenia. */
+  function restoreSamples(result) {
     const run = result.run, ds = result.ds;
     const out = [];
     const last = result.series.length - 1;
+    for (const b of run.brokenSamples(4)) {
+      const f = ds.files[b.fi];
+      if (!f) continue;
+      const r = run.restore(b.day, b.fi);
+      if (r) {
+        r.file = f.name;
+        r.why = b.bad + ' fragmentów bez celu';
+        out.push(r);
+      } else {
+        // restore zwrócił null, bo fragment zniknął z dysku — to nie jest
+        // brak próbki, tylko plik, którego już nie da się złożyć
+        out.push({
+          file: f.name, day: b.day, bytes: 0, chunks: 0, containers: 0, seeks: 0,
+          verified: false, deltas: 0, broken: b.bad, risky: b.bad, dead: true,
+          why: b.bad + ' fragmentów zniknęło z dysku'
+        });
+      }
+    }
     for (let s = 0; s < 12; s++) {
       const day = Math.max(0, last - s * Math.max(1, Math.floor(last / 11)));
       const cands = ds.files.filter(f => !f.dead && f.born !== undefined && f.born <= day);
       if (!cands.length) continue;
       const f = cands[(s * 7) % cands.length];
       const r = run.restore(day, f.i);
-      if (r) {
-        r.file = f.name; r.type = f.type;
-        r.expires = day + result.retention;
-        out.push(r);
-      }
+      if (r) { r.file = f.name; r.type = f.type; out.push(r); }
     }
-    if (!out.length) return out;
-    if (perDay) return out;
     return out;
   }
 

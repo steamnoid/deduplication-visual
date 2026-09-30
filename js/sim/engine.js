@@ -119,9 +119,14 @@
       const off = used; used += fileLen;
       const prev = f.bodies[f.bodies.length - 1];
       pool.copyWithin(off, prev.off, prev.off + fileLen);
-      const span = Math.max(256, Math.floor(fileLen * T.churn * (0.5 + r())));
-      const at = Math.floor(r() * Math.max(1, fileLen - span));
-      for (let k = 0; k < span; k++) pool[off + at + k] = (pool[off + at + k] + 31 + k) & 0xff;
+      // kilka rozproszonych edycji, a nie jeden równy blok: tyle naprawdę
+      // zmienia się w pliku, gdy ktoś go edytuje albo dopisuje na końcu
+      const spots = 1 + Math.floor(r() * 3);
+      const span = Math.max(192, Math.floor(fileLen * T.churn / spots * (0.6 + r() * 0.8)));
+      for (let s = 0; s < spots; s++) {
+        const at = Math.floor(r() * Math.max(1, fileLen - span));
+        for (let k = 0; k < span; k++) pool[off + at + k] = Math.floor(r() * 256);
+      }
       f.bodies.push({ off, len: fileLen });
       ds.usedBytes = used;
       return f.bodies.length - 1;
@@ -135,9 +140,9 @@
       const off = used; used += fileLen;
       const segs = segmentsFor(fileLen, T.share);
       for (const sg of segs) pool.copyWithin(off + sg.at, 0, sg.len);
-      for (let k = 0; k < Math.floor(fileLen * 0.02); k++) {
+      for (let k = 0; k < fileLen * T.share * 0.1; k++) {
         const at = Math.floor(r() * fileLen);
-        pool[off + at] = (pool[off + at] + 7) & 0xff;
+        pool[off + at] = Math.floor(r() * 256);
       }
       f.bodies = [{ off, len: fileLen }];
       f.version = 0;
@@ -294,6 +299,11 @@
       this.gcLog = [];           // przebiegi kompaktacji
       this.bodyLog = new Map();  // (plik, dzień) -> bajty tej wersji
       this.expiredKeys = new Set(); // backupy już wygaszone
+      // delta: chunkId -> {target, rawLen}. Rekord na dysku niesie
+      // operacje COPY/INS, a bajt docelowy musi żyć, żeby plik dało się
+      // odtworzyć — stąd liczymy zerwane łańcuchy.
+      this.deltaOf = new Map();
+      this.rcache = new Map();
       this._storeBytes = cfg.keepBytes !== false;
       this.chunker = null;
       this.curFile = null;
@@ -303,7 +313,9 @@
         logical: 0, written: 0, chunks: 0, unique: 0, dups: 0,
         bytesScanned: 0, ms: 0, peakIndex: 0, bucketHits: 0,
         expiredBytes: 0, expiredChunks: 0, expiredRefs: 0, gcRuns: 0, gcRewritten: 0,
-        gcRead: 0, gcChunks: 0, backups: 0, falseNeg: 0, restoredFiles: 0, restoredBytes: 0
+        gcRead: 0, gcChunks: 0, backups: 0, falseNeg: 0, restoredFiles: 0, restoredBytes: 0,
+        deltaChunks: 0, deltaBytes: 0, deltaRaw: 0, deltaTries: 0, chainsBroken: 0,
+        chainRewrites: 0, chainBytes: 0, chainMaxDepth: 0
       };
       this.history = {
         logical: [], ratio: [], ram: [], written: [], avg: [],
@@ -387,11 +399,12 @@
           this._grow(this.isNew, e.id); this.isNew[e.id] = 1;
           this._grow(this.chunkRefs, e.id); this.chunkRefs[e.id] = 1;
           this._storeOff = ch.off + cs;
-        if (this.bucketCounts[bucket] > 0) st.bucketHits++;
+          if (this.bucketCounts[bucket] > 0) st.bucketHits++;
           this.bucketCounts[bucket]++;
-          this.storeChunk(e, len);
+          const rec = this.makeRecord(cid, ds.pool.subarray(ch.off + cs, ch.off + cs + len), len, k);
+          this.storeChunk(e, rec);
           st.unique++;
-          st.written += len;
+          st.written += rec.length;
           let arr = this.dataIndex.get(fp);
           if (!arr) { arr = []; this.dataIndex.set(fp, arr); }
           arr.push(e.id);
@@ -428,8 +441,274 @@
       else this[arr === this.isNew ? 'isNew' : 'chunkRefs'] = b;
     }
 
-    /* zapis nowego chunka do aktualnego kontenera */
-    storeChunk(e, len) {
+    /* Delta: zamiast surowych bajtów zapisujemy operacje COPY/INS
+       względem bajtu docelowego, który już jest na dysku. Celem jest
+       jeden z kilku chunków tej samej wersji pliku sprzed zmiany —
+       nie wiemy, który pasuje, więc próbujemy kilku i bierzemy najlepszy.
+       Zapisujemy tylko wtedy, gdy rekord jest wyraźnie mniejszy: sam
+       nagłówek i operacje kosztują, a na małym chunku delta bywa droższa
+       od surowych bajtów. */
+    makeRecord(cid, bytes, len, k) {
+      const raw = NS.delta.rawRecord(bytes);
+      if (!this.cfg.delta || len < (this.cfg.deltaMin || 256)) return raw;
+
+      const st = this.st;
+      st.deltaTries++;
+      const cands = this.deltaCandidates(k);
+      let best = null, bestLen = raw.length;
+      for (const tc of cands) {
+        const target = this.readChunk(tc);
+        if (!target || target.length < 32) continue;
+        const rec = NS.delta.record(NS.delta.encode(target, bytes), bytes);
+        if (rec.length < bestLen) { bestLen = rec.length; best = { rec, target: tc }; }
+      }
+      if (!best || bestLen >= raw.length * (this.cfg.deltaMinRatio || 0.85)) return raw;
+      let depth = 1, t = best.target;
+      while (this.deltaOf.has(t)) { depth++; t = this.deltaOf.get(t).target; }
+      if (depth > st.chainMaxDepth) st.chainMaxDepth = depth;
+      this.deltaOf.set(cid, { target: best.target, rawLen: len });
+      st.deltaChunks++;
+      st.deltaRaw += len;
+      st.deltaBytes += bestLen;
+      return best.rec;
+    }
+
+    /* Wybór celu delta to cała sztuka: cel musi być tym samym kawałkiem
+       pliku sprzed zmiany. Treść zostaje na miejscu, przesuwa się tylko
+       granice chunków, więc szukamy wokół tego samego indeksu.
+       Wariant „recent" bierze po prostu ostatnie chunky i pokazuje, ile
+       kosztuje zły strzał. Treść celu czytamy z dysku, więc kandydat może
+       być sam zapisany jako delta — readChunk składa łańcuch. */
+    deltaCandidates(k) {
+      const key = this.curFile.i;
+      // szukamy w dniach, które już się skończyły: bieżące chunki tego
+      // samego dnia są od siebie niezależne i delta na nich nic nie daje
+      let marks = null;
+      for (let d = this.day - 1; d >= 0; d--) {
+        const m = this.marksByFile.get(this.markKey(key, d));
+        if (m && m.length) { marks = m; break; }
+      }
+      if (!marks) return [];
+      const n = this.cfg.deltaTargets || 4;
+      const out = [];
+      if (this.cfg.deltaPick === 'recent') {
+        for (let i = marks.length - 1; i >= 0 && out.length < n; i--) out.push(marks[i]);
+        return out;
+      }
+      for (let j = Math.max(0, k - 1); j < marks.length && out.length < n; j++) {
+        out.push(marks[j]);
+      }
+      return out;
+    }
+
+    /* Odczyt treści chunka z dysku. Deltas składamy rekurencyjnie,
+       więc łańcuch musi dać się rozwinąć; głębokość jest ograniczona,
+       bo prawdziwe systemy też nie pozwalają na nieskończone łańcuchy. */
+    readChunk(cid, depth) {
+      const d0 = depth || 0;
+      if (d0 > 12) return null;
+      if (this.rcache.has(cid)) return this.rcache.get(cid);
+      const slot = this.byChunkId[cid];
+      if (!slot) return null;
+      const src = this.containers[slot.cont];
+      if (!src || !src.data) return null;
+      const rec = src.data.subarray(slot.off, slot.off + slot.len);
+      const d = this.deltaOf.get(cid);
+      let out;
+      if (d) {
+        const target = this.readChunk(d.target, d0 + 1);
+        if (!target) { this.st.chainsBroken++; return null; }
+        out = NS.delta.apply(target, NS.delta.parse(rec), d.rawLen);
+        if (!out) this.st.chainsBroken++;
+      } else {
+        out = rec.length > 1 ? rec.subarray(1) : new Uint8Array(0);
+      }
+      if (this.rcache.size > 20000) this.rcache.clear();
+      this.rcache.set(cid, out);
+      return out;
+    }
+
+    /* Długość logiczna chunka (delta może mieć na dysku mniej bajtów
+       niż w pliku, i to jest właśnie cały point). */
+    chunkLength(cid) {
+      const d = this.deltaOf.get(cid);
+      if (d) return d.rawLen;
+      const slot = this.byChunkId[cid];
+      return slot ? Math.max(0, slot.len - 1) : 0;
+    }
+
+    /* Zerwany łańcuch to delta, której bajt docelowy właśnie zniknął.
+       Sprawdzamy po każdym sprzątaniu, bo to najczęstsza awaria
+       dedupu z deltą: retencja zabija cel, plik zostaje, a odtworzyć
+       się nie da. */
+    checkChains() {
+      let broken = 0;
+      for (const [cid, d] of this.deltaOf) {
+        if ((this.chunkRefs[cid] | 0) <= 0) continue;
+        if ((this.chunkRefs[d.target] | 0) <= 0) broken++;
+      }
+      return broken;
+    }
+
+    /* Deltas, których cel właśnie umiera, rozpisujemy na surowe bajty.
+       Robimy to zanim cel zostanie usunięty, bo po GC nie ma już czego
+       złożyć. Każda taka operacja to dodatkowy zapis na dysk — ceną
+       niezawodnego restore jest zapis. */
+    resolveDependants(deadIds) {
+      const dead = new Set(deadIds);
+      const victims = [];
+      for (const [cid, d] of this.deltaOf) {
+        if ((this.chunkRefs[cid] | 0) <= 0) continue;
+        if (dead.has(d.target)) victims.push(cid);
+      }
+      let bytes = 0;
+      for (const cid of victims) {
+        const full = this.rebuildRaw(cid);
+        if (!full) continue;
+        this.deltaOf.delete(cid);
+        const slot = this.byChunkId[cid];
+        this.contHoles[slot.cont] += slot.len;   // miejsce po delcie zostaje dziurą
+        const rec = NS.delta.rawRecord(full);
+        this.storeChunk({ id: cid }, rec);
+        bytes += rec.length;
+        this.st.chainRewrites++;
+      }
+      if (bytes) {
+        this.rcache.clear();
+        this.st.chainBytes += bytes;
+        this.st.written += bytes;
+      }
+      return { fixed: victims.length, bytes };
+    }
+
+    /* Wymuszone sprzątanie: zabiera wszystko, co straciło ostatnią
+       referencję, niezależnie od progu. Służy do sprawdzenia, co się
+       stanie z łańcuchami delt, które do tej pory trzymały się na
+       szczęściu. */
+    gcAll() {
+      const before = this.st.chainsBroken;
+      const risky = this.riskCount();
+      let rec = this.gc(true);
+      const brokenNow = this.brokenFiles();
+      this.st.chainsBroken += brokenNow.chunks;
+      return { risky, collected: rec ? rec.chunks : 0, bytes: rec ? rec.written : 0,
+        brokenFiles: brokenNow.files, brokenChunks: brokenNow.chunks,
+        names: brokenNow.names, before };
+    }
+
+    /* Ile fragmentów wisi na celu bez referencji — czyli tyle zależy od
+       tego, kiedy system zdecyduje się sprzątać. */
+    riskCount() {
+      let n = 0;
+      for (const [cid, d] of this.deltaOf) {
+        if ((this.chunkRefs[cid] | 0) <= 0) continue;
+        if ((this.chunkRefs[d.target] | 0) <= 0) n++;
+      }
+      return n;
+    }
+
+    /* Ile plików na dysku jest teraz nie do odtworzenia: taki, którego
+       fragment wisi na delcie z zabitym celem. */
+    brokenFiles() {
+      const deadTargets = new Set();
+      for (const [cid, d] of this.deltaOf) {
+        if ((this.chunkRefs[d.target] | 0) <= 0) deadTargets.add(d.target);
+      }
+      if (!deadTargets.size) return { files: 0, chunks: 0, names: [] };
+      const names = new Set();
+      let chunks = 0;
+      for (const [key, marks] of this.marksByFile) {
+        let bad = 0;
+        for (let i = 0; i < marks.length; i++) {
+          const d = this.deltaOf.get(marks[i]);
+          if (d && deadTargets.has(d.target)) { bad++; chunks++; }
+        }
+        if (bad) {
+          const fi = parseInt(key, 10);
+          const f = this.ds.files[fi];
+          if (f) names.add(f.name);
+        }
+      }
+      return { files: names.size, chunks, names: Array.from(names).slice(0, 6) };
+    }
+
+    /* Próby restore, które na pewno się nie udadzą: pliki, których
+       fragment wisi na delcie z zabitym celem. Bez tego sampler wybierałby
+       same pliki, które akurat wychodzą, i ukryłby awarię. */
+    brokenSamples(limit) {
+      const deadTargets = new Set();
+      for (const [cid, d] of this.deltaOf) {
+        if ((this.chunkRefs[d.target] | 0) <= 0) deadTargets.add(d.target);
+      }
+      const out = [];
+      if (!deadTargets.size) return out;
+      for (const [key, marks] of this.marksByFile) {
+        if (this.expiredKeys.has(key)) continue;
+        let bad = 0;
+        for (let i = 0; i < marks.length; i++) {
+          const d = this.deltaOf.get(marks[i]);
+          if (d && deadTargets.has(d.target)) bad++;
+        }
+        if (!bad) continue;
+        const at = key.indexOf('@');
+        out.push({ fi: parseInt(key, 10), day: parseInt(key.slice(at + 1), 10), bad });
+        if (out.length >= (limit || 4)) break;
+      }
+      return out;
+    }
+
+    /* Naprawa: zerwane delty rozpisujemy na surowe bajty. Kosztuje
+       dodatkowy zapis, ale restore znów działa. */
+    repairChains() {
+      let fixed = 0, bytes = 0;
+      for (const [cid, d] of Array.from(this.deltaOf)) {
+        if ((this.chunkRefs[cid] | 0) <= 0) continue;
+        if ((this.chunkRefs[d.target] | 0) > 0) continue;
+        const full = this.rebuildRaw(cid);
+        if (!full) continue;
+        this.deltaOf.delete(cid);
+        const slot = this.byChunkId[cid];
+        this.contHoles[slot.cont] += slot.len;   // stare miejsce zostaje dziurą
+        const rec = NS.delta.rawRecord(full);
+        this.storeChunk({ id: cid }, rec);
+        fixed++;
+        bytes += rec.length;
+      }
+      this.rcache.clear();
+      this.st.repaired += fixed;
+      this.st.written += bytes;
+      return { fixed, bytes };
+    }
+
+    /* Odtworzenie surowej treści chunka, gdy sam jest delta: składamy
+       łańcuch aż do surowego rekordu u źródła. */
+    rebuildRaw(cid) {
+      const order = [];
+      let cur = cid;
+      while (cur != null && this.deltaOf.has(cur)) {
+        order.push(cur);
+        cur = this.deltaOf.get(cur).target;
+      }
+      if (cur == null || !this.byChunkId[cur]) return null;
+      let bytes = this.readChunk(cur);
+      if (!bytes) return null;
+      for (let i = order.length - 1; i >= 0; i--) {
+        const d = this.deltaOf.get(order[i]);
+        const slot = this.byChunkId[order[i]];
+        if (!slot) return null;          // fragment już zniknął — danych nie da się odzyskać
+        const src = this.containers[slot.cont];
+        const rec = src.data.subarray(slot.off, slot.off + slot.len);
+        bytes = NS.delta.apply(bytes, NS.delta.parse(rec), d.rawLen);
+        if (!bytes) return null;
+      }
+      return bytes;
+    }
+
+    /* zapis rekordu chunka do aktualnego kontenera. Rekod bywa krótszy
+       niż treść pliku (delta), więc liczymy to, co realnie zajmuje
+       miejsce na dysku, a nie długość chunka. */
+    storeChunk(e, rec) {
+      const len = rec.length;
       let cont = this.containers[this.containers.length - 1];
       if (!cont || cont.free < len) {
         cont = new Container(this.containerSize);
@@ -439,9 +718,7 @@
       const off = cont.used;
       cont.used += len;
       cont.chunks.push(e.id);
-      if (cont.data && this._storeBytes) {
-        cont.data.set(this.ds.pool.subarray(this._storeOff, this._storeOff + len), off);
-      }
+      if (cont.data && this._storeBytes) cont.data.set(rec, off);
       this.byChunkId[e.id] = { cont: this.containers.length - 1, off, len };
     }
 
@@ -450,6 +727,7 @@
     expireFiles(count, queue, day) {
       const doneFiles = (queue || this.fileQueue).slice(0, count);
       const victims = doneFiles;
+      const justDied = [];
       let freed = 0, dropped = 0, chunks = 0;
       victims.forEach(entry => {
         const fi = typeof entry === 'number' ? entry : entry.fi;
@@ -470,6 +748,7 @@
                 this.contHoles[slot.cont] += slot.len;
                 freed += slot.len;
                 dropped++;
+                justDied.push(cid);
               }
             }
           }
@@ -478,6 +757,14 @@
         // na osi czasu plik żyje dalej, wygasa wyłącznie ten backup
         if (day == null) f.dead = true;
       });
+      // chunk, który właśnie stracił ostatnią referencję, może być celem
+      // delty. Jeśli tak, mamy dwie uczciwe drogi: rozwinąć zależne delty
+      // na surowe bajty (koszt: dodatkowy zapis) albo zostawić plik
+      // nieodtwarzalny (koszt: dane).
+      if (this.cfg.chainGuard !== 'off' && justDied.length) {
+        this.resolveDependants(justDied);
+      }
+      if (justDied.length) this.rcache.clear();
       this.st.expiredBytes += freed;
       this.st.expiredChunks += dropped;
       this.st.expiredRefs += chunks;
@@ -516,6 +803,9 @@
 
       const before = { containers: this.containers.length, bytes: disk, holes };
       this.containers = newC; this.contHoles = newHoles; this.byChunkId = newBy;
+      // cache odczytów musi zniknąć razem ze sprzątniętymi chunkami —
+      // inaczej restore po GC składałby plik z bajtów, których już nie ma
+      this.rcache.clear();
       this.st.gcRuns++;
       this.st.gcRewritten += written;
       this.st.gcRead += read;
@@ -537,20 +827,28 @@
       const marks = this.marksByFile.get(this.markKey(fi, day));
       if (!marks) return null;
       let total = 0;
-      for (let i = 0; i < marks.length; i++) {
-        const sl = this.byChunkId[marks[i]];
-        if (!sl) return null;
-        total += sl.len;
-      }
+      for (let i = 0; i < marks.length; i++) total += this.chunkLength(marks[i]);
       const out = new Uint8Array(total);
       const seen = new Set();
-      let o = 0, seek = 0, last = -1;
+      let o = 0, seek = 0, last = -1, broken = 0, risky = 0, deltas = 0, depthMax = 0;
       for (let i = 0; i < marks.length; i++) {
-        const sl = this.byChunkId[marks[i]];
+        const cid = marks[i];
+        const sl = this.byChunkId[cid];
+        if (!sl) return null;
         if (sl.cont !== last) { seen.add(sl.cont); seek++; last = sl.cont; }
-        const src = this.containers[sl.cont];
-        if (src && src.data) out.set(src.data.subarray(sl.off, sl.off + sl.len), o);
-        o += sl.len;
+        if (this.deltaOf.has(cid)) {
+          deltas++;
+          let d = 0, c = cid;
+          while (this.deltaOf.has(c)) { d++; c = this.deltaOf.get(c).target; }
+          if (d > depthMax) depthMax = d;
+          // cel bez referencji wciąż ma bajty na dysku, więc restore
+          // jeszcze działa — ale sprzątanie go usunie i plik padnie
+          if ((this.chunkRefs[this.deltaOf.get(cid).target] | 0) <= 0) risky++;
+        }
+        const bytes = this.readChunk(cid);
+        if (!bytes) { broken++; continue; }
+        out.set(bytes, o);
+        o += bytes.length;
       }
       const body = this.bodyLog.get(this.markKey(fi, day)) || f;
       let same = true, firstDiff = -1;
@@ -560,7 +858,8 @@
       this.st.restoredFiles++;
       this.st.restoredBytes += total;
       return { file: f.name, day, bytes: total, chunks: marks.length,
-        containers: seen.size, seeks: seek, verified: same, firstDiff };
+        containers: seen.size, seeks: seek, verified: same && !broken,
+        deltas, broken, risky, depthMax, firstDiff };
     }
 
     sample() {

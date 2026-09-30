@@ -6,7 +6,8 @@
     cfg: {
       type: 'vm', files: 40, fileKB: 48, redundancy: 0.55,
       bits: 5, fastCDC: true, speed: 1, containerKB: 32, retention: 6,
-      indexKind: 'hash', segChunks: 16
+      indexKind: 'hash', segChunks: 16,
+      delta: 'off', chainGuard: 'expand'
     },
     run: null, playing: true, dirty: true,
     tl: { res: null, sel: 0, layout: null, busy: false }
@@ -22,7 +23,7 @@
     ctx = cv.getContext('2d', { alpha: false });
     ['cfgType', 'cfgFiles', 'cfgRedund', 'cfgBits', 'cfgSpeed', 'cfgCont', 'cfgRet',
       'cfgIndex', 'cfgSeg', 'cmpBtn', 'cmpPanel', 'cmpBody', 'cmpClose',
-      'tlBtn', 'tlPanel', 'tlBody', 'tlClose',
+      'tlBtn', 'tlPanel', 'tlBody', 'tlClose', 'cfgDelta', 'cfgChain', 'rowChain',
       'files', 'btnPlay', 'btnReset', 'btnExpire', 'stLogical', 'stWritten', 'stRatio',
       'stChunks', 'stUnique', 'stDups', 'stIdx', 'stCont', 'stHoles', 'stFps', 'poolInfo'
     ].forEach(k => { el[k] = $(k); });
@@ -54,6 +55,11 @@
     syncSeg();
 
     el.cmpBtn.addEventListener('click', openCompare);
+    el.cfgDelta.addEventListener('change', e => { state.cfg.delta = e.target.value; syncDelta(); });
+    el.cfgChain.addEventListener('change', e => { state.cfg.chainGuard = e.target.value; });
+    el.cfgDelta.value = state.cfg.delta;
+    el.cfgChain.value = state.cfg.chainGuard;
+    syncDelta();
     el.tlBtn.addEventListener('click', openTimeline);
     el.tlClose.addEventListener('click', closeTimeline);
     el.cmpClose.addEventListener('click', closeCompare);
@@ -77,6 +83,10 @@
       el.btnPlay.textContent = state.playing ? '⏸ Pauza' : '▶ Graj';
     });
     el.btnReset.addEventListener('click', () => { rebuild(); state.playing = true; el.btnPlay.textContent = '⏸ Pauza'; });
+  }
+
+  function syncDelta() {
+    el.rowChain.style.display = state.cfg.delta === 'off' ? 'none' : '';
   }
 
   function syncSeg() {
@@ -149,12 +159,25 @@
     requestAnimationFrame(() => setTimeout(() => {
       const c = state.cfg;
       const t0 = performance.now();
-      const res = SIM.timeline.runBatch({
+      const base = {
         type: c.type, files: c.files, fileKB: c.fileKB, redundancy: c.redundancy,
-        bits: c.bits, fastCDC: c.fastCDC, indexKind: c.indexKind, segChunks: c.segChunks,
+        fastCDC: c.fastCDC, indexKind: c.indexKind, segChunks: c.segChunks,
         containerKB: c.containerKB, retention: c.retention, days: 30
-      });
+      };
+      const res = SIM.timeline.runBatch(Object.assign({}, base, {
+        delta: c.delta !== 'off', deltaPick: c.delta, chainGuard: c.chainGuard
+      }));
       res.ms = performance.now() - t0;
+      // dwa warianty do porównania: cel wybierany po pozycji i „ostatni
+      // chunk”. To najlepsza ilustracja, że w delta liczy się wybór celu
+      res.alts = null;
+      if (c.delta !== 'off') {
+        res.alts = [
+          { label: 'bez delty', r: SIM.timeline.runBatch(base) },
+          { label: 'delta, cel po pozycji', r: SIM.timeline.runBatch(Object.assign({}, base, { delta: true, deltaPick: 'index', chainGuard: c.chainGuard })) },
+          { label: 'delta, cel: ostatnie chunki', r: SIM.timeline.runBatch(Object.assign({}, base, { delta: true, deltaPick: 'recent', chainGuard: c.chainGuard })) }
+        ];
+      }
       state.tl.res = res;
       state.tl.sel = res.series.length - 1;
       state.tl.busy = false;
@@ -213,6 +236,7 @@
       row('indeks w RAM na koniec', fmtB(s.indexRam) + ' (' + fmt(s.indexEntries) + ' wpisów)', 'var(--violet)') +
       '</tbody></table>' +
       '<p class="note">' + waExplain(s) + '</p>' +
+      deltaSection(res, s) +
 
       (gcLog.length
         ? '<h3 style="margin:20px 0 8px;font-size:13px">Kiedy GC włączał się w miesiącu</h3>' +
@@ -253,6 +277,28 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     state.tl.layout = SIM.view.drawTimeline(ctx, W, 250, res, state.tl.sel);
 
+    const gcBtn = $('gcBtn');
+    if (gcBtn) {
+      gcBtn.addEventListener('click', () => {
+        const g = res.run.gcAll();
+        state.tl.gc = g;
+        renderTimeline();
+      });
+    }
+    if (state.tl.gc) {
+      const g = state.tl.gc;
+      const after = SIM.timeline.restoreSamples(res);
+      const bad = after.filter(x => !x.verified).length;
+      el.tlBody.insertAdjacentHTML('afterbegin',
+        '<p class="note" style="margin:0 0 12px;padding:10px 12px;border:1px solid ' +
+        (bad ? 'var(--bad)' : 'var(--line)') + ';border-radius:6px;color:' +
+        (bad ? 'var(--bad)' : 'var(--save)') + '">Po wymuszonym sprzątaniu: zebrano ' +
+        fmtB(g.bytes) + ' (' + fmt(g.collected) + ' chunków). Restore: ' +
+        (after.length - bad) + '/' + after.length + ' plików zgodnych bajt w bajt' +
+        (bad ? ', <b>' + bad + ' plików jest do odtworzenia z nieczytelnych fragmentów</b>' +
+          (g.names && g.names.length ? ' (' + g.names.join(', ') + ')' : '') : '.') + '</p>');
+    }
+
     cv.onclick = ev => {
       const r = cv.getBoundingClientRect();
       const x = ev.clientX - r.left;
@@ -261,6 +307,55 @@
       const i = Math.floor((x - L.px) / L.bw);
       if (i >= 0 && i < L.n) { state.tl.sel = i; renderTimeline(); }
     };
+  }
+
+  /* Delta na 30 dniach. Trzy liczby są tu najważniejsze: ile bajtów
+     zastąpiła delta, ile kosztowało utrzymanie łańcuchów i ile plików
+     przestało się odtwarzać. */
+  function deltaSection(res, s) {
+    if (!s.deltaChunks && !res.alts) return '';
+    const out = [];
+    out.push('<h3 style="margin:20px 0 8px;font-size:13px">Delta: różnica zamiast całości</h3>');
+    out.push('<div class="stats" style="margin:0 0 6px">' +
+      stat('prób delta', fmt(s.deltaTries)) +
+      stat('zapisanych delt', fmt(s.deltaChunks), 'var(--violet)') +
+      stat('bajty na deltach', SIM.view.fmtB(s.deltaBytes), 'var(--violet)') +
+      stat('oszczędność', s.deltaRaw ? Math.round(100 * s.deltaSaved / s.deltaRaw) + '%' : '—', 'var(--save)') +
+      stat('najdłuższy łańcuch', s.chainMaxDepth ? s.chainMaxDepth + ' delta' : 'brak') +
+      stat('rozwiązane łańcuchy', fmt(s.chainRewrites) + (s.chainBytes ? ' (' + SIM.view.fmtB(s.chainBytes) + ')' : ''), 'var(--ref)') +
+      stat('fragmenty bez celu', fmt(s.brokenNow), s.brokenNow ? 'var(--bad)' : '') +
+      stat('pliki do odtworzenia', String(s.brokenFiles.files), s.brokenFiles.files ? 'var(--bad)' : 'var(--save)') +
+      '</div>');
+
+    if (res.alts) {
+      out.push('<table style="margin-top:12px"><thead><tr><th>wariant</th><th>zapis na dysk</th>' +
+        '<th>oszczędność</th><th>dedup ratio</th><th>write amplif.</th><th>pliki zepsute</th></tr></thead><tbody>' +
+        res.alts.map(a => {
+          const x = a.r.summary;
+          return '<tr><th>' + a.label + '</th><td>' + SIM.view.fmtB(x.stored) + '</td><td>' +
+            (x.stored ? Math.round(100 * (1 - x.stored / res.alts[0].r.summary.stored)) : 0) + '%</td><td>' +
+            x.ratio.toFixed(1) + ' : 1</td><td>' + x.wa.toFixed(2) + '×</td><td>' +
+            (x.brokenFiles.files ? '<span style="color:var(--bad)">' + x.brokenFiles.files + '</span>' : '0') +
+            '</td></tr>';
+        }).join('') + '</tbody></table>');
+      out.push('<p class="note">Ten sam miesiąc, te same dane, różny wybór celu delty. ' +
+        'Ostatnia kolumna to pliki, których nie da się odtworzyć, bo retencja ' +
+        'zabiła bajt docelowy, którego nikt nie zabezpieczył.</p>');
+    }
+
+    out.push('<p class="note">Delta działa na chunkach ' +
+      (s.chunkBytes >= 1024 ? (s.chunkBytes / 1024) + ' KB' : s.chunkBytes + ' B') +
+      ', bo oś czasu liczymy w takiej skali — przy 32-bajtowych chunkach animacji ' +
+      'każdy rekord delta byłby droższy niż surowe bajty. Wybór celu to ' +
+      '<b>cel po pozycji</b> (ten sam kawałek pliku sprzed zmiany, tylko granice się ' +
+      'przesunęły) albo prosto <b>ostatni zapisany chunk</b>. Różnica w zapisie jest ' +
+      'kilkunastokrotna, bo zły cel oznacza kompresję bez pokrycia.</p>');
+
+    out.push('<div style="margin:12px 0 4px;display:flex;gap:8px;align-items:center">' +
+      '<button class="btn" id="gcBtn">🧹 Wymuś GC i sprawdź restore</button>' +
+      '<span style="font-size:11px;color:var(--dim)">sprząta wszystko, co straciło ostatnią referencję — ' +
+      'i pokaże, co przestanie się odtwarzać</span></div>');
+    return out.join('');
   }
 
   function stat(label, value, color) {
