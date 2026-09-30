@@ -69,6 +69,7 @@
       bits: c.bits, fastCDC: c.fastCDC, cdcMasks: c.cdcMasks, indexKind: c.indexKind,
       segChunks: c.segChunks, containerKB: c.containerKB, keepBytes: c.keepBytes,
       delta: c.delta, deltaPick: c.deltaPick, deltaMin: c.deltaMin, deltaTargets: c.deltaTargets,
+      fpBits: c.fpBits, fpVerify: c.fpVerify,
       chainGuard: c.chainGuard
     });
 
@@ -283,6 +284,7 @@
       chainsBroken: run.st.chainsBroken,
       brokenNow: run.checkChains(),
       brokenFiles: run.brokenFiles(),
+      falsePos: run.st.falsePos,
       chainRewrites: run.st.chainRewrites,
       chainBytes: run.st.chainBytes,
       chainMaxDepth: run.st.chainMaxDepth,

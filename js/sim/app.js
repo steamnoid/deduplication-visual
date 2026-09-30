@@ -7,6 +7,7 @@
       type: 'vm', files: 40, fileKB: 48, redundancy: 0.55,
       bits: 5, fastCDC: true, speed: 1, containerKB: 32, retention: 6,
       indexKind: 'hash', segChunks: 16, cdcMasks: true,
+      fpBits: 64, fpVerify: true,
       delta: 'off', chainGuard: 'expand'
     },
     run: null, playing: true, dirty: true,
@@ -23,7 +24,7 @@
     ctx = cv.getContext('2d', { alpha: false });
     ['cfgType', 'cfgFiles', 'cfgRedund', 'cfgBits', 'cfgSpeed', 'cfgCont', 'cfgRet',
       'cfgIndex', 'cfgSeg', 'cmpBtn', 'cmpPanel', 'cmpBody', 'cmpClose',
-      'tlBtn', 'tlPanel', 'tlBody', 'tlClose', 'cfgDelta', 'cfgChain', 'rowChain', 'cfgNC',
+      'tlBtn', 'tlPanel', 'tlBody', 'tlClose', 'cfgDelta', 'cfgChain', 'rowChain', 'cfgNC', 'cfgFp', 'cfgFpVal', 'cfgFpVerify',
       'files', 'btnPlay', 'btnReset', 'btnExpire', 'stLogical', 'stWritten', 'stRatio',
       'stChunks', 'stUnique', 'stDups', 'stIdx', 'stCont', 'stHoles', 'stFps', 'poolInfo'
     ].forEach(k => { el[k] = $(k); });
@@ -55,6 +56,14 @@
     syncSeg();
 
     el.cmpBtn.addEventListener('click', openCompare);
+    el.cfgFp.addEventListener('input', () => {
+      state.cfg.fpBits = +el.cfgFp.value;
+      el.cfgFpVal.textContent = state.cfg.fpBits + ' bity' +
+        (state.cfg.fpBits === 64 ? ' (pełny odcisk)' : '');
+      restart();
+    });
+    el.cfgFpVal.textContent = 'pełny odcisk';
+    el.cfgFpVerify.addEventListener('change', e => { state.cfg.fpVerify = e.target.checked; restart(); });
     el.cfgNC.addEventListener('change', e => { state.cfg.cdcMasks = e.target.checked; restart(); });
     el.cfgNC.checked = state.cfg.cdcMasks;
     el.cfgDelta.addEventListener('change', e => { state.cfg.delta = e.target.value; syncDelta(); });
@@ -164,7 +173,8 @@
       const base = {
         type: c.type, files: c.files, fileKB: c.fileKB, redundancy: c.redundancy,
         fastCDC: c.fastCDC, indexKind: c.indexKind, segChunks: c.segChunks,
-        containerKB: c.containerKB, retention: c.retention, days: 30, cdcMasks: c.cdcMasks
+        containerKB: c.containerKB, retention: c.retention, days: 30, cdcMasks: c.cdcMasks,
+        fpBits: c.fpBits, fpVerify: c.fpVerify
       };
       const res = SIM.timeline.runBatch(Object.assign({}, base, {
         delta: c.delta !== 'off', deltaPick: c.delta, chainGuard: c.chainGuard
@@ -200,6 +210,13 @@
     const okAll = restored.every(r => r.verified);
 
     el.tlBody.innerHTML =
+      (s.falsePos
+        ? '<p class="note" style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--bad);' +
+          'border-radius:6px;color:var(--bad)">Skrócony odcisk bez weryfikacji spowodował ' +
+          fmt(s.falsePos) + ' fałszywych trafień. System zapisał cudze bajty, więc dedup ratio ' +
+          'wygląda lepiej niż naprawdę, a część plików nie odtworzy się poprawnie. ' +
+          'Żaden licznik na pulpicie tego nie pokaże — widać to dopiero przy sprawdzeniu bajtów.</p>'
+        : '') +
       '<p class="lead">Miesiąc pracy systemu na tych samych danych, które widzisz w symulatorze: ' +
       'codziennie backup wszystkich plików, pliki się zmieniają, najstarsze kopie wygasają po ' +
       s.days + ' dniach, a gdy dziury przekroczą 25% dysku, startuje GC. Policzone w ' +
@@ -238,6 +255,9 @@
       row('oszczędność (wejście / zapis)', s.ratio.toFixed(1) + ' : 1', 'var(--save)') +
       row('write amplification (zapis / nowe bajty)', s.wa.toFixed(2) + '×', 'var(--bad)') +
       row('udział GC w zapisie', Math.round(s.gcShare * 100) + '%', 'var(--bad)') +
+      (s.falsePos
+        ? row('fałszywe trafienia near-exact', fmt(s.falsePos) + ' — dane uszkodzone', 'var(--bad)')
+        : '') +
       row('przebiegi GC', String(s.gcRuns) + ' (' + s.gcChunks + ' chunków)', '') +
       row('kopie wygaszone', fmt(s.expiredCopies), '') +
       row('żywe bajty na dysku', (s.live / 1048576).toFixed(2) + ' MB z ' + (s.disk / 1048576).toFixed(2) + ' MB', '') +

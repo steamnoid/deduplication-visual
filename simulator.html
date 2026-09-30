@@ -175,6 +175,27 @@
 
         <button class="btn" id="cmpBtn" style="width:100%;margin-top:2px">⇄ Porównaj strategie na tym zbiorze</button>
         <div class="grp" style="margin-top:14px">
+          <h3>Near-exact (rozdział 8)</h3>
+          <label class="ctl">
+            <div class="row"><span class="n">bity odcisku w indeksie</span><output id="cfgFpVal"></output></div>
+            <input type="range" id="cfgFp" min="4" max="64" step="4" value="64">
+          </label>
+          <label class="ctl">
+            <div class="row"><span class="n">weryfikacja pełnego hasza</span></div>
+            <div style="display:flex;gap:7px;align-items:center;font-size:11.5px;color:var(--muted)">
+              <input type="checkbox" id="cfgFpVerify" checked style="margin:0">
+              <span>sprawdzamy pełny hash przy trafieniu</span>
+            </div>
+          </label>
+          <p style="margin:8px 0 0;font-size:11px;color:var(--dim);line-height:1.45">
+            Skrócony odcisk to near-exact. Przy weryfikacji indeks jest
+            24 razy mniejszy, a ratio zostaje takie samo. Bez weryfikacji
+            pojawiają się fałszywe trafienia: metryka dedup rośnie, a pliki
+            przestają się odtwarzać. Widać to dopiero po sprawdzeniu bajtów.
+          </p>
+        </div>
+
+        <div class="grp" style="margin-top:14px">
           <h3>Delta (rozdział 7)</h3>
           <label class="ctl">
             <div class="row"><span class="n">kompresja delta</span></div>
