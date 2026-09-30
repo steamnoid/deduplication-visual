@@ -130,6 +130,20 @@ Maski są liczone względem wybranej średniej (`s = bits+2`, `a = bits`, `l = b
 
 **Zastrzeżenie o skali, które trzeba powiedzieć wprost:** dane symulatora to powielone bloki 4096 B ze wspólnej biblioteki. Punkty cięcia wracają, więc rozkład rozmiarów jest znacznie bardziej skoncentrowany niż na prawdziwych plikach — w pliku 96 KB przy średniej 8 KB wychodzi 19 chunków, ale tylko 8 unikalnych rozmiarów. Histogram pokazuje **kierunek zmian** (normalizacja zacina rozkład), a nie jest benchmarkiem. To ostrzeżenie stoi też w interfejsie.
 
+### Znormalizowane chunking (FastCDC, rozdział 3)
+
+Chunker ma teraz dwie maski tak, jak w artykule (Xia i in., USENIX ATC 2016): **MaskS przed progiem średniej** (trudniej ciąć, więc chunki są dłuższe) i **MaskL po progu** (łatwiej ciąć, więc ogony rozkładu się skracają). Maska domyślna **MaskA** to wariant bez normalizacji.
+
+Maski są liczone względem wybranej średniej (`s = bits+2`, `a = bits`, `l = bits−2`), więc dla konfiguracji 8 KB z artykułu wychodzi dokładnie **MaskS 15 / MaskA 13 / MaskL 11 bitów** — te same wartości, które podaje Algorithm 1. Zmierzone na naszych danych:
+
+| średnia | bez NC | z NC |
+|---|---|---|
+| 1 KB | średnia 1092 B, rozstęp p05–p95 3073 B | średnia 954 B, rozstęp 1266 B |
+| 4 KB | średnia 2809 B, rozstęp 7087 B | średnia 2731 B, rozstęp 3586 B |
+| 8 KB | średnia 5174 B, rozstęp 13336 B | średnia 8937 B, rozstęp 8509 B |
+
+**Zastrzeżenie o skali, które trzeba powiedzieć wprost:** dane symulatora to powielone bloki 4096 B ze wspólnej biblioteki. Punkty cięcia wracają, więc rozkład rozmiarów jest znacznie bardziej skoncentrowany niż na prawdziwych plikach — w pliku 96 KB przy średniej 8 KB wychodzi 19 chunków, ale tylko 8 unikalnych rozmiarów. Histogram pokazuje **kierunek zmian** (normalizacja zacina rozkład), a nie jest benchmarkiem. To ostrzeżenie stoi też w interfejsie.
+
 Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni, **S5** kompresja delta, **S6** odtwarzanie przebiegu dnia, **S7** warstwa wyjaśnień, **S8** znormalizowane chunking (zrobione).
 
 ## Co w środku
