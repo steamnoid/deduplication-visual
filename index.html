@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dedup dla systemów pamięci masowej — prezentacja</title>
+<link rel="stylesheet" href="css/deck.css">
+</head>
+<body>
+
+<div id="progress"></div>
+
+<main id="stage" aria-live="polite"></main>
+
+<nav id="chrome" aria-label="Nawigacja prezentacji">
+  <button id="prevBtn" title="Poprzedni slajd (←)">‹</button>
+  <span id="counter">1 / 1</span>
+  <button id="nextBtn" title="Następny slajd (→)">›</button>
+  <button id="tocBtn" title="Przegląd slajdów (O)">Przegląd</button>
+</nav>
+
+<div id="hint"><kbd>←</kbd> <kbd>→</kbd> nawigacja · <kbd>O</kbd> przegląd · <kbd>F</kbd> pełny ekran</div>
+
+<div id="overview" role="dialog" aria-label="Przegląd slajdów">
+  <h2>Deduplication for High Performance Storage Systems</h2>
+  <p class="sub">Dan Feng, Lili Qiu i in. — 8 rozdziałów, ~50 slajdów. Kliknij slajd, aby przejść do niego. <kbd>Esc</kbd> zamyka.</p>
+  <div id="ovBody"></div>
+</div>
+
+<!-- silnik scen i animacji -->
+<script src="js/scenes/core.js"></script>
+<script src="js/scenes/ch0.js"></script>
+<script src="js/scenes/ch1.js"></script>
+<script src="js/scenes/ch2.js"></script>
+<script src="js/scenes/ch3.js"></script>
+<script src="js/scenes/ch4.js"></script>
+<script src="js/scenes/ch5.js"></script>
+<script src="js/scenes/ch6.js"></script>
+<script src="js/scenes/ch7.js"></script>
+<script src="js/scenes/ch8.js"></script>
+<script src="js/scenes/extra.js"></script>
+
+<!-- treść slajdów -->
+<script src="js/slides/ch0.js"></script>
+<script src="js/slides/ch1.js"></script>
+<script src="js/slides/ch2.js"></script>
+<script src="js/slides/ch3.js"></script>
+<script src="js/slides/ch4.js"></script>
+<script src="js/slides/ch5.js"></script>
+<script src="js/slides/ch6.js"></script>
+<script src="js/slides/ch7.js"></script>
+<script src="js/slides/ch8.js"></script>
+<script src="js/slides/summary.js"></script>
+
+<!-- silnik decku (musi być ostatni) -->
+<script src="js/deck.js"></script>
+</body>
+</html>

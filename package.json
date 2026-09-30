@@ -1,0 +1,18 @@
+{
+  "name": "dedup-deck",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interaktywna prezentacja + animacje GIF: Data Deduplication for High Performance Storage System (Dan Feng)",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "gifs": "node tools/export-gifs.mjs",
+    "gifs:one": "node tools/export-gifs.mjs --scene",
+    "poster": "node tools/export-gifs.mjs --poster-only"
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3",
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^23.0.0"
+  }
+}

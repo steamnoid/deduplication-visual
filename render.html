@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>render — generator GIF</title>
+<style>
+  html,body { margin:0; background:#0a0e18; color:#e9eefb; font-family:-apple-system, system-ui, sans-serif; }
+  #wrap { display:inline-block; padding:0; }
+  canvas { display:block; }
+  #hud { font: 12px ui-monospace, Menlo, monospace; padding: 6px 10px; color:#94a3c2; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+<div id="hud">…</div>
+
+<script src="js/scenes/core.js"></script>
+<script src="js/scenes/ch0.js"></script>
+<script src="js/scenes/ch1.js"></script>
+<script src="js/scenes/ch2.js"></script>
+<script src="js/scenes/ch3.js"></script>
+<script src="js/scenes/ch4.js"></script>
+<script src="js/scenes/ch5.js"></script>
+<script src="js/scenes/ch6.js"></script>
+<script src="js/scenes/ch7.js"></script>
+<script src="js/scenes/ch8.js"></script>
+<script src="js/scenes/extra.js"></script>
+
+<script>
+/* Minimalny loader deck.js: rejestruje renderowanie scen bez budowania UI decku. */
+window.DECK.renderScene = function (ctx, sceneId, t, params) {
+  var sc = DECK.scenes[sceneId];
+  if (!sc) throw new Error('brak sceny: ' + sceneId);
+  var p = Object.assign({}, params);
+  sc.controls.forEach(function (c) { if (p[c.key] === undefined) p[c.key] = c.value; });
+  ctx.save();
+  ctx.fillStyle = DECK.C.bg;
+  ctx.fillRect(0, 0, sc.width, sc.height);
+  sc.draw(ctx, t, p, sc);
+  ctx.restore();
+};
+
+window.__setup = function (sceneId, scale) {
+  var sc = DECK.scenes[sceneId];
+  var cv = document.getElementById('cv');
+  var k = scale || 1;
+  cv.width = Math.round(sc.width * k);
+  cv.height = Math.round(sc.height * k);
+  var ctx = cv.getContext('2d', { alpha: false });
+  ctx.scale(k, k);
+  window.__ctx = ctx;
+  window.__sc = sc;
+  document.getElementById('hud').textContent = sceneId + ' ' + sc.width + 'x' + sc.height;
+  return { w: cv.width, h: cv.height, duration: sc.duration };
+};
+
+window.__frame = function (t, params) {
+  window.DECK.renderScene(window.__ctx, window.__sc.id, t, params);
+  return true;
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animacje z prezentacji — galeria GIF</title>
+<meta name="description" content="Galeria 27 animowanych GIF-ów (800×450, 20 kl./s) z prezentacji Deduplication for High Performance Storage Systems.">
+<link rel="stylesheet" href="css/deck.css">
+<style>
+html, body { height: auto; overflow: visible; }
+
+.gf-page { max-width: 1400px; margin: 0 auto; padding: 34px 30px 56px; }
+
+.gf-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.gf-topbar h1 {
+  margin: 0 0 8px;
+  font-size: clamp(26px, 3.2vw, 40px);
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  font-weight: 750;
+}
+
+.gf-topbar .gf-sub {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.gf-topbar .gf-sub strong { color: var(--text); font-weight: 650; }
+
+.gf-right { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+
+.gf-counter {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--accent);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 11px;
+  white-space: nowrap;
+}
+
+.gf-back {
+  display: inline-block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 14px;
+  transition: background .14s, border-color .14s;
+}
+
+.gf-back::before { content: "← "; color: var(--accent); }
+.gf-back:hover { background: #22304f; border-color: #3a4a70; }
+
+.gf-group { margin-top: 38px; }
+
+.gf-group > h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--c, var(--accent));
+}
+
+.gf-group > h2::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.gf-group > h2 .gf-count {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+.gf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.gf-tile {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color .14s, transform .14s;
+}
+
+.gf-tile:hover { border-color: #3a4a70; transform: translateY(-2px); }
+.gf-tile:focus-within { border-color: var(--accent); }
+
+.gf-shot {
+  display: block;
+  background: #0b1120;
+  border-bottom: 1px solid var(--line);
+  aspect-ratio: 800 / 450;
+}
+
+.gf-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gf-shot:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+
+.gf-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  background: repeating-linear-gradient(45deg, #141c2f, #141c2f 9px, #182137 9px, #182137 18px);
+}
+
+.gf-body { display: flex; flex-direction: column; flex: 1; padding: 12px 14px 14px; }
+
+.gf-title {
+  margin: 0 0 4px;
+  font-size: 15.5px;
+  line-height: 1.3;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.gf-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--accent);
+  word-break: break-all;
+}
+
+.gf-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gf-badge {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 16%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line));
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.gf-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+
+.gf-btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 11px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s;
+}
+
+.gf-btn:hover { background: #22304f; border-color: #3a4a70; }
+.gf-btn:active { transform: translateY(1px); }
+.gf-btn.ok { color: #062; background: color-mix(in srgb, var(--save) 26%, var(--panel-2)); border-color: var(--save); }
+
+.gf-btn:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.gf-dl { margin-top: 46px; padding-top: 24px; border-top: 1px solid var(--line); }
+.gf-dl h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -0.01em; }
+.gf-dl p { margin: 0 0 16px; font-size: 14px; color: var(--muted); }
+
+.gf-dl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gf-dl-grid a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.gf-dl-grid a:hover { color: var(--text); background: var(--panel-2); border-color: #3a4a70; }
+.gf-dl-grid a .gf-kb { margin-left: auto; color: var(--muted); }
+
+.gf-foot {
+  margin-top: 34px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.gf-foot p { margin: 0 0 6px; }
+.gf-foot p:last-child { margin-bottom: 0; }
+
+.gf-note-rm {
+  display: none;
+  margin: 18px 0 0;
+  padding: 10px 13px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+}
+
+@media (max-width: 760px) {
+  .gf-page { padding: 24px 16px 40px; }
+  .gf-grid { grid-template-columns: 1fr; }
+  .gf-dl-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gf-tile { transition: none; }
+  .gf-tile:hover { transform: none; }
+  .gf-btn:active { transform: none; }
+  .gf-note-rm { display: block; }
+}
+</style>
+</head>
+<body>
+
+<div class="gf-page">
+
+  <header class="gf-topbar">
+    <div class="gf-head">
+      <h1>Animacje z prezentacji</h1>
+      <p class="gf-sub">Deduplication for High Performance Storage Systems — <strong>27 animowanych GIF-ów</strong> (800×450, 20 kl./s)</p>
+    </div>
+    <div class="gf-right">
+      <span class="gf-counter" id="counter" role="status" aria-live="polite">Wczytywanie…</span>
+      <a class="gf-back" href="index.html">Wróć do prezentacji</a>
+    </div>
+  </header>
+
+  <p class="gf-note-rm" id="rmNote">System ustawiony na ograniczenie ruchu — zamiast animacji pokazujemy statyczne miniatury. Kliknięcie miniatury otwiera pełny GIF.</p>
+
+  <main id="gallery"></main>
+
+  <section class="gf-dl" aria-labelledby="dlTitle">
+    <h2 id="dlTitle">Pobierz wszystkie</h2>
+    <p>Każdy GIF to osobny plik — kliknięcie zapisze go bezpośrednio na dysk.</p>
+    <ul class="gf-dl-grid" id="downloads"></ul>
+  </section>
+
+  <footer class="gf-foot">
+    <p>Rysunki są poglądowe. Schematy uproszczono na potrzeby prezentacji — nie odtwarzają dokładnych zachowań konkretnych implementacji, a liczby w animacjach służą zobrazowaniu idei, nie pomiarom wydajności.</p>
+    <p>Rozmiary plików odczytywane są przez <code>fetch</code> z nagłówkiem <code>HEAD</code>. Gdy strona jest otwarta bezpośrednio z dysku (protokół <code>file://</code>, przeglądarka blokuje zapytania), wyświetlana jest migawka rozmiarów zapisaną w tej stronie.</p>
+  </footer>
+
+</div>
+
+<script src="js/scenes/core.js"></script>
+<script src="js/scenes/ch0.js"></script>
+<script src="js/scenes/ch1.js"></script>
+<script src="js/scenes/ch2.js"></script>
+<script src="js/scenes/ch3.js"></script>
+<script src="js/scenes/ch4.js"></script>
+<script src="js/scenes/ch5.js"></script>
+<script src="js/scenes/ch6.js"></script>
+<script src="js/scenes/ch7.js"></script>
+<script src="js/scenes/ch8.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  var GROUPS = [
+    { name: 'Wprowadzenie i backup', c: '#8fa3c8', scenes: [
+      { id: 'why-dedup', desc: 'oszczędność miejsca po usunięciu duplikatów' },
+      { id: 'file-vs-chunk', desc: 'porównanie dedupu na poziomie plików i bloków' },
+      { id: 'backup-evolution', desc: 'przejście od kopii pełnych przez przyrostowe do dedupowych' }
+    ]},
+    { name: 'Przegląd', c: '#f4a261', scenes: [
+      { id: 'dedup-taxonomy', desc: 'podział technik dedupu' },
+      { id: 'dedup-workflow', desc: 'przebieg dedupu krok po kroku' },
+      { id: 'dedup-scenarios', desc: 'typowe scenariusze użycia dedupu' },
+      { id: 'key-tech-map', desc: 'mapa kluczowych technologii: hashowanie, dzielenie, indeks' }
+    ]},
+    { name: 'Chunking', c: '#5aa9e6', scenes: [
+      { id: 'fixed-vs-cdc', desc: 'bloki stałe wobec dzielenia zależnego od zawartości' },
+      { id: 'gear-hash', desc: 'rolling hash Geara i wyznaczanie granic chunków' },
+      { id: 'fastcdc-masks', desc: 'maski FastCDC i typowe rozmiary chunków' },
+      { id: 'cutpoint-skip', desc: 'przeskakiwanie po punktach cięcia przy ponownym chunkowaniu' }
+    ]},
+    { name: 'Indeksowanie', c: '#2ec4b6', scenes: [
+      { id: 'index-bottleneck', desc: 'indeks jako wąskie gardło dedupu' },
+      { id: 'extreme-binning-similarity', desc: 'Extreme Binning: jeden wpis indeksu na plik, nie na chunk' },
+      { id: 'bloom-gate', desc: 'Bloom filter jako szybka bramka zapytania' },
+      { id: 'silo-two-levels', desc: 'SiLo: similarity kurczy indeks, locality ogranicza losowe odczyty' }
+    ]},
+    { name: 'Rewriting', c: '#b388eb', scenes: [
+      { id: 'fragmentation', desc: 'fragmentacja plików po dedupie' },
+      { id: 'har-rewrite', desc: 'HAR: duplikaty wracają do rzadkich kontenerów z poprzedniego backupu' },
+      { id: 'cabdedup', desc: 'CABdedupe: przyczynowość między plikami w zbiorze' }
+    ]},
+    { name: 'Bezpieczeństwo', c: '#ffd166', scenes: [
+      { id: 'dedup-leak', desc: 'wyciek informacji przez wspólne fragmenty' },
+      { id: 'key-hierarchy', desc: 'hierarchiczna struktura kluczy z podpowiadaniem' }
+    ]},
+    { name: 'Delta compression', c: '#48cae4', scenes: [
+      { id: 'delta-encoding', desc: 'kodowanie różnicowe między podobnymi wersjami' },
+      { id: 'ddelta', desc: 'algorytm ddelta i dobór okna podobieństwa' },
+      { id: 'dare', desc: 'DARE czyli najpierw znajdź podobne, potem kompresuj' }
+    ]},
+    { name: 'Framework', c: '#a0c4ff', scenes: [
+      { id: 'inline-pipeline', desc: 'potok przetwarzania realizowany w miejscu' },
+      { id: 'gc-amplification', desc: 'wzmocnienie zapisu podczas zbiórki śmieci' },
+      { id: 'near-exact-physical', desc: 'dedup near-exact z lokalnością fizyczną' },
+      { id: 'near-exact-logical', desc: 'dedup near-exact z lokalnością logiczną' }
+    ]}
+  ];
+
+  var SIZE_SNAPSHOT = {
+    'backup-evolution': 59363,
+    'bloom-gate': 88401,
+    'cabdedup': 234370,
+    'cutpoint-skip': 108380,
+    'dare': 166678,
+    'ddelta': 145460,
+    'dedup-leak': 227165,
+    'dedup-scenarios': 320602,
+    'dedup-taxonomy': 156086,
+    'dedup-workflow': 106454,
+    'delta-encoding': 140011,
+    'extreme-binning-similarity': 589873,
+    'fastcdc-masks': 104192,
+    'file-vs-chunk': 201129,
+    'fixed-vs-cdc': 142946,
+    'fragmentation': 173665,
+    'gc-amplification': 195209,
+    'gear-hash': 111338,
+    'har-rewrite': 330269,
+    'index-bottleneck': 191848,
+    'inline-pipeline': 261301,
+    'key-hierarchy': 344988,
+    'key-tech-map': 318513,
+    'near-exact-logical': 183285,
+    'near-exact-physical': 81781,
+    'silo-two-levels': 456911,
+    'why-dedup': 74779,
+  };
+
+  var GIF_DIR = 'gifs/';
+  var POSTER_DIR = 'posters/';
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  var gallery = document.getElementById('gallery');
+  var downloads = document.getElementById('downloads');
+  var counter = document.getElementById('counter');
+  var tiles = [];
+
+  function sourceFor(id) {
+    return reduceMotion.matches ? POSTER_DIR + id + '.png' : GIF_DIR + id + '.gif';
+  }
+
+  function titleFor(id) {
+    var sc = window.DECK && window.DECK.scenes && window.DECK.scenes[id];
+    if (sc && sc.title) return sc.title;
+    console.warn('[gifs] brak tytułu sceny dla "' + id + '" — używam identyfikatora');
+    return id;
+  }
+
+  function kilobytes(bytes) {
+    return Math.round(bytes / 1024) + ' KB';
+  }
+
+  function plural(n, one, few, many) {
+    if (n === 1) return one;
+    var d10 = n % 10, d100 = n % 100;
+    if (d10 >= 2 && d10 <= 4 && !(d100 >= 12 && d100 <= 14)) return few;
+    return many;
+  }
+
+  function megabytes(bytes) {
+    return (bytes / 1048576).toLocaleString('pl-PL', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2
+    });
+  }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+
+  function legacyCopy(text) {
+    var field = document.createElement('textarea');
+    field.value = text;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.top = '-1000px';
+    field.style.left = '-1000px';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    field.setSelectionRange(0, text.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(field);
+    return ok;
+  }
+
+  function markMissing(tile) {
+    if (tile.missing) return;
+    tile.missing = true;
+    console.warn('[gifs] brak pliku na dysku: ' + GIF_DIR + tile.id + '.gif');
+
+    var shot = tile.el.querySelector('.gf-shot');
+    var holder = tile.el.querySelector('.gf-shot-holder');
+    if (shot) shot.remove();
+    if (holder && !holder.querySelector('.gf-missing')) {
+      holder.appendChild(el('p', 'gf-missing', 'Brak pliku ' + GIF_DIR + tile.id + '.gif'));
+    }
+    var meta = tile.el.querySelector('.gf-meta');
+    if (meta && !meta.querySelector('.gf-badge')) meta.appendChild(el('span', 'gf-badge', 'brak pliku'));
+  }
+
+  function buildTile(id, desc, groupName) {
+    var title = titleFor(id);
+    var path = GIF_DIR + id + '.gif';
+    var tile = { id: id, el: null, bytes: 0, missing: false };
+
+    var article = el('article', 'gf-tile tile');
+    article.setAttribute('aria-labelledby', 't-' + id);
+
+    var holder = el('div', 'gf-shot-holder');
+    holder.style.cssText = 'position:relative;aspect-ratio:800/450;border-bottom:1px solid var(--line);background:#0b1120';
+
+    var link = el('a', 'gf-shot');
+    link.href = path;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.title = 'Otwórz GIF: ' + title;
+
+    var img = el('img');
+    img.src = sourceFor(id);
+    img.alt = 'Animacja „' + title + '” — ' + desc + '. Grupa: ' + groupName + '.';
+    img.width = 800;
+    img.height = 450;
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.addEventListener('error', function () {
+      if (reduceMotion.matches) {
+        console.warn('[gifs] brak miniatury: ' + POSTER_DIR + id + '.png');
+        if (link.isConnected) link.appendChild(el('p', 'gf-missing', 'Brak miniatury dla ' + id));
+        return;
+      }
+      markMissing(tile);
+    });
+
+    link.appendChild(img);
+    holder.appendChild(link);
+    article.appendChild(holder);
+
+    var body = el('div', 'gf-body');
+
+    var h3 = el('h3', 'gf-title', title);
+    h3.id = 't-' + id;
+    body.appendChild(h3);
+
+    body.appendChild(el('code', 'gf-id', id + '.gif'));
+
+    var meta = el('div', 'gf-meta');
+    meta.appendChild(el('span', 'gf-size', '…'));
+    body.appendChild(meta);
+
+    var actions = el('div', 'gf-actions');
+
+    var open = el('a', 'gf-btn', 'Otwórz GIF');
+    open.href = path;
+    open.target = '_blank';
+    open.rel = 'noopener noreferrer';
+    actions.appendChild(open);
+
+    var copyBtn = el('button', 'gf-btn', 'Kopiuj ścieżkę');
+    copyBtn.type = 'button';
+    var copyTimer = null;
+    copyBtn.addEventListener('click', function () {
+      if (copyTimer) clearTimeout(copyTimer);
+      copyToClipboard(path).then(function (ok) {
+        copyBtn.textContent = ok ? 'Skopiowano' : 'Skopiuj ręcznie';
+        copyBtn.classList.toggle('ok', !!ok);
+        copyTimer = setTimeout(function () {
+          copyBtn.textContent = 'Kopiuj ścieżkę';
+          copyBtn.classList.remove('ok');
+        }, 1500);
+      });
+    });
+    actions.appendChild(copyBtn);
+
+    body.appendChild(actions);
+    article.appendChild(body);
+
+    tile.el = article;
+    tile.img = img;
+    return tile;
+  }
+
+  function buildDownloadRow(tile, title) {
+    var li = el('li');
+    var a = el('a');
+    a.href = GIF_DIR + tile.id + '.gif';
+    a.download = tile.id + '.gif';
+    a.appendChild(el('span', null, '↓ ' + title + ' — ' + tile.id + '.gif'));
+    a.appendChild(el('span', 'gf-kb', ''));
+    tile.kbNode = a.querySelector('.gf-kb');
+    li.appendChild(a);
+    downloads.appendChild(li);
+  }
+
+  GROUPS.forEach(function (group) {
+    var section = el('section', 'gf-group');
+    section.style.setProperty('--c', group.c);
+
+    var h2 = el('h2', null, group.name);
+    h2.appendChild(el('span', 'gf-count', String(group.scenes.length)));
+    section.appendChild(h2);
+
+    var grid = el('div', 'gf-grid');
+    group.scenes.forEach(function (scene) {
+      var tile = buildTile(scene.id, scene.desc, group.name);
+      tiles.push(tile);
+      grid.appendChild(tile.el);
+      buildDownloadRow(tile, titleFor(scene.id));
+    });
+
+    section.appendChild(grid);
+    gallery.appendChild(section);
+  });
+
+  function applySizes() {
+    var known = 0;
+    var total = 0;
+    tiles.forEach(function (tile) {
+      if (tile.bytes) {
+        known++;
+        total += tile.bytes;
+        var size = tile.el.querySelector('.gf-size');
+        if (size) size.textContent = kilobytes(tile.bytes);
+        if (tile.kbNode) tile.kbNode.textContent = kilobytes(tile.bytes);
+      } else {
+        markMissing(tile);
+      }
+    });
+    counter.textContent = tiles.length + ' ' + plural(tiles.length, 'animacja', 'animacje', 'animacji') +
+      (known ? ', ' + megabytes(total) + ' MB łącznie' : '');
+    counter.title = known === tiles.length
+      ? 'Rozmiary odczytane na żywo przez fetch HEAD.'
+      : 'Część rozmiarów pochodzi z migawki zapisanej w stronie.';
+  }
+
+  function head(url) {
+    return fetch(url, { method: 'HEAD', cache: 'no-store' }).then(function (res) {
+      if (!res.ok) return null;
+      var len = Number(res.headers.get('content-length'));
+      return len > 0 ? len : null;
+    });
+  }
+
+  function loadSizes() {
+    return head(GIF_DIR + tiles[0].id + '.gif').then(function (probe) {
+      if (!probe) {
+        tiles.forEach(function (tile) {
+          var snap = SIZE_SNAPSHOT[tile.id];
+          if (snap) tile.bytes = snap;
+        });
+        return;
+      }
+      return Promise.all(tiles.map(function (tile) {
+        return head(GIF_DIR + tile.id + '.gif').then(function (bytes) {
+          if (bytes) tile.bytes = bytes;
+        });
+      }));
+    }).catch(function () {
+      tiles.forEach(function (tile) {
+        var snap = SIZE_SNAPSHOT[tile.id];
+        if (snap) tile.bytes = snap;
+      });
+    }).then(function () {
+      applySizes();
+    });
+  }
+
+  function syncSources() {
+    var poster = reduceMotion.matches;
+    document.getElementById('rmNote').style.display = poster ? '' : 'none';
+    tiles.forEach(function (tile) {
+      if (tile.missing) return;
+      var next = poster ? POSTER_DIR + tile.id + '.png' : GIF_DIR + tile.id + '.gif';
+      if (tile.img.getAttribute('src') !== next) tile.img.src = next;
+    });
+  }
+
+  if (reduceMotion.addEventListener) {
+    reduceMotion.addEventListener('change', syncSources);
+  } else if (reduceMotion.addListener) {
+    reduceMotion.addListener(syncSources);
+  }
+  syncSources();
+
+  loadSizes();
+
+  window.__gifsGallery = {
+    tiles: tiles,
+    count: function () { return document.querySelectorAll('.gf-tile').length; }
+  };
+})();
+</script>
+
+</body>
+</html>

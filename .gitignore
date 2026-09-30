@@ -1,0 +1,5 @@
+node_modules/
+.shots/
+posters/_sheet.png
+.DS_Store
+*.log
