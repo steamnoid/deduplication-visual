@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maszyna dedupu — symulator</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #060a13; --panel: #0e1524; --panel2: #131c2e; --line: #24314c;
+    --text: #e9eefb; --muted: #94a3c2; --dim: #5b6b8c;
+    --new: #f4a261; --dupe: #2ec4b6; --ref: #ffd166; --save: #06d6a0;
+    --violet: #b388eb; --info: #5aa9e6; --bad: #ef476f;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, "SF Pro Text", system-ui, sans-serif; overflow: hidden; }
+  a { color: var(--info); }
+
+  #app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 18px;
+    border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { margin: 0; font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+  header .stage { font-size: 11.5px; color: var(--dim); }
+  header .grow { flex: 1; }
+  header a.btn, button.btn { font: inherit; font-size: 12px; font-weight: 600; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 7px;
+    padding: 6px 11px; cursor: pointer; text-decoration: none; }
+  button.btn:hover, header a.btn:hover { background: #1d2a44; }
+  button.btn.on { background: #223252; border-color: var(--info); }
+
+  main { display: grid; grid-template-columns: 272px 1fr; min-height: 0; }
+
+  aside { border-right: 1px solid var(--line); background: var(--panel);
+    overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+
+  .grp { border: 1px solid var(--line); border-radius: 10px; background: #0b1220; padding: 11px 12px 13px; }
+  .grp > h3 { margin: 0 0 10px; font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--dim); }
+
+  label.ctl { display: block; margin-bottom: 11px; }
+  label.ctl:last-child { margin-bottom: 0; }
+  label.ctl .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+  label.ctl span.n { font-size: 11.5px; color: var(--muted); }
+  label.ctl output { font: 600 11.5px var(--mono); color: var(--text); }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px;
+    border-radius: 3px; background: var(--line); outline: none; margin: 0; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--info); border: 2px solid #0b1220; cursor: pointer; }
+  select { font: inherit; font-size: 12px; color: var(--text); background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; width: 100%; }
+
+  .files { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; }
+  .frow { display: grid; grid-template-columns: 1fr auto auto; gap: 7px; align-items: center;
+    font: 11.5px var(--mono); color: var(--muted); background: transparent; border: 1px solid transparent;
+    border-radius: 5px; padding: 3px 6px; cursor: pointer; text-align: left; }
+  .frow:hover { background: #131c2e; }
+  .frow .fmeta { color: var(--dim); font-size: 10.5px; }
+  .frow .fkind { font-size: 9.5px; padding: 1px 5px; border-radius: 4px; }
+  .fkind.copy { background: rgba(46,196,182,.16); color: var(--dupe); }
+  .fkind.base { background: rgba(244,162,97,.16); color: var(--new); }
+  .frow.done { color: var(--dim); }
+  .frow.cur { background: #1a2740; border-color: var(--info); color: var(--text); }
+
+  section.stage2 { display: grid; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; }
+  .canvaswrap { min-height: 0; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .stats { display: flex; gap: 0; border-top: 1px solid var(--line); background: var(--panel); overflow-x: auto; }
+  .stat { flex: 1 1 0; min-width: 96px; padding: 9px 14px; border-right: 1px solid var(--line); }
+  .stat:last-child { border-right: 0; }
+  .stat .l { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--dim); }
+  .stat .v { font: 700 16px var(--mono); margin-top: 2px; }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 42vh; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Maszyna dedupu</h1>
+    <span class="stage">etap 1 · bajty → chunki → indeks &nbsp;·&nbsp; * prędkość skanu w symulatorze, nie benchmark</span>
+    <span class="grow"></span>
+    <span class="stage" id="poolInfo">…</span>
+    <button class="btn" id="btnPlay">⏸ Pauza</button>
+    <button class="btn" id="btnReset">↻ Nowy zbiór</button>
+    <a class="btn" href="index.html">← Prezentacja</a>
+  </header>
+
+  <main>
+    <aside>
+      <div class="grp">
+        <h3>Zbiór danych</h3>
+        <label class="ctl">
+          <div class="row"><span class="n">typ plików</span></div>
+          <select id="cfgType"></select>
+        </label>
+        <label class="ctl">
+          <div class="row"><span class="n">liczba plików</span><output id="cfgFilesVal"></output></div>
+          <input type="range" id="cfgFiles" min="6" max="120" step="2" value="40">
+        </label>
+        <label class="ctl">
+          <div class="row"><span class="n">redundancja</span><output id="cfgRedundVal"></output></div>
+          <input type="range" id="cfgRedund" min="0" max="100" step="5" value="55">
+        </label>
+        <p style="margin:10px 0 0;font-size:11px;color:var(--dim);line-height:1.45">
+          Redundancja = jaka część plików to kopie wcześniejszych. W poolu trafiają prawdziwe
+          bajty, więc granice chunków liczy autentyczny gear hash.
+        </p>
+      </div>
+
+      <div class="grp">
+        <h3>Chunking</h3>
+        <label class="ctl">
+          <div class="row"><span class="n">liczba bitów maski</span><output id="cfgBitsVal"></output></div>
+          <input type="range" id="cfgBits" min="3" max="8" step="1" value="5">
+        </label>
+        <label class="ctl">
+          <div class="row"><span class="n">prędkość skanu</span><output id="cfgSpeedVal"></output></div>
+          <input type="range" id="cfgSpeed" min="1" max="8" step="1" value="2">
+        </label>
+      </div>
+
+      <div class="grp">
+        <h3>Pliki w kolejce</h3>
+        <div class="files" id="files"></div>
+      </div>
+    </aside>
+
+    <section class="stage2">
+      <div class="canvaswrap"><canvas id="cv"></canvas></div>
+      <div class="stats">
+        <div class="stat"><div class="l">logiczne</div><div class="v" id="stLogical" style="color:var(--info)">—</div></div>
+        <div class="stat"><div class="l">zapisane</div><div class="v" id="stWritten" style="color:var(--new)">—</div></div>
+        <div class="stat"><div class="l">dedup ratio</div><div class="v" id="stRatio" style="color:var(--save)">—</div></div>
+        <div class="stat"><div class="l">chunki</div><div class="v" id="stChunks">—</div></div>
+        <div class="stat"><div class="l">unikalne</div><div class="v" id="stUnique" style="color:var(--violet)">—</div></div>
+        <div class="stat"><div class="l">duplikaty</div><div class="v" id="stDups" style="color:var(--dupe)">—</div></div>
+        <div class="stat"><div class="l">skan *</div><div class="v" id="stFps" style="font-size:13px">—</div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="js/sim/engine.js"></script>
+<script src="js/sim/view.js"></script>
+<script src="js/sim/app.js"></script>
+</body>
+</html>
