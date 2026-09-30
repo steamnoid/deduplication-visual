@@ -26,6 +26,32 @@ Strona z GIF-ami: **`gifs.html`** (galeria 27 animacji, kopiowanie ścieżek, `p
 
 Animacje mają własne sterowanie: suwaki maski, progu, rozmiaru cache, liczby próbek, przełączniki wariantów. Każda scena ma podpis „co widać”, a liczby na slajdzie zgadzają się z tym, co widać na ekranie.
 
+## Skrót: co jest w repozytorium
+
+| Plik | Co to jest |
+|---|---|
+| `index.html` | prezentacja, 53 slajdy w 9 rozdziałach |
+| `simulator.html` | symulator: bajty → chunki → indeks → kontenery → miesiąc pracy |
+| `gifs.html` | galeria 27 animacji |
+| `js/slides/` | treść slajdów, rozdział na plik |
+| `js/scenes/` | animacje canvas na potrzeby slajdów |
+| `js/sim/engine.js` | pula bajtów, chunker, indeks, kontenery, GC, restore |
+| `js/sim/delta.js` | kompresja delta: COPY/INS z kotwicami gear |
+| `js/sim/indices.js` | trzy strategie indeksu z rozdziału 4 |
+| `js/sim/timeline.js` | 30 dni: retencja, GC, łańcuchy delt, ślad dnia |
+| `js/sim/view.js` | rysowanie pipeline’u, wykresu miesiąca i przebiegu dnia |
+| `tools/measure-chunking.cjs` | pomiar, ile wykrywa chunking po wstawce bajtów |
+| `tools/smoke-drawing.cjs` | testy symulatora bez przeglądarki |
+
+```bash
+npm test               # testy symulatora (rysowanie, spójność id, chunking)
+npm run check          # node --check wszystkich modułów + testy
+npm run measure:chunking          # pomiar chunkingu, pliki 64 KB
+FILE_KB=1024 npm run measure:chunking   # pomiar na plikach 1 MB
+```
+
+Etapy symulatora: **S1** bajty → chunki → indeks, **S2** kontenery, retencja i dziury, **S3** strategie indeksu, **S4** GC, restore i oś 30 dni, **S5** kompresja delta, **S6** odtwarzanie przebiegu dnia, **S7** warstwa wyjaśnień, **S8** znormalizowane chunking, **S9** pomiar cut-point skipingu.
+
 ## Maszyna dedupu — interaktywny symulator
 
 `simulator.html` (przycisk **Symulator** w dolnym pasku decku) to działający symulator systemu dedupu, a nie opis. Bajty są w nim prawdziwe: pula danych to jeden `Uint8Array`, pliki to widoki (offset, długość), więc redundancja jest realnym powtórzeniem bajtów, a granice chunków liczy autentyczny gear hash (tabela 32-bitowa, `h = (h << 1) + G[bajt]`).
