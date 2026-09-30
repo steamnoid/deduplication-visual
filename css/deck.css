@@ -343,6 +343,17 @@ select.btn {
 
 #tocBtn { width: auto; padding: 0 12px; font-size: 12px; }
 
+#simBtn {
+  font-family: inherit; font-size: 12px; font-weight: 600; line-height: 28px;
+  color: #04101f; background: linear-gradient(180deg, #2ec4b6, #1f9e93);
+  border: 0; border-radius: 7px; padding: 0 13px; text-decoration: none;
+  box-shadow: 0 0 0 1px #2ec4b655, 0 4px 14px rgba(46, 196, 182, .22);
+  transition: filter .14s, transform .08s;
+}
+#simBtn:hover { filter: brightness(1.12); }
+#simBtn:active { transform: translateY(1px); }
+#simBtn:focus-visible { outline: 2px solid #5aa9e6; outline-offset: 2px; }
+
 #hint {
   position: fixed;
   right: 18px;

@@ -5,7 +5,7 @@
   const state = {
     cfg: {
       type: 'vm', files: 40, fileKB: 48, redundancy: 0.55,
-      bits: 5, fastCDC: true, speed: 1
+      bits: 5, fastCDC: true, speed: 1, containerKB: 32, retention: 6
     },
     run: null, playing: true, dirty: true
   };
@@ -18,9 +18,9 @@
   function init() {
     cv = $('cv');
     ctx = cv.getContext('2d', { alpha: false });
-    ['cfgType', 'cfgFiles', 'cfgRedund', 'cfgBits', 'cfgSpeed', 'files',
-      'btnPlay', 'btnReset', 'stLogical', 'stWritten', 'stRatio', 'stChunks',
-      'stUnique', 'stDups', 'stFps', 'poolInfo', 'hint'
+    ['cfgType', 'cfgFiles', 'cfgRedund', 'cfgBits', 'cfgSpeed', 'cfgCont', 'cfgRet',
+      'files', 'btnPlay', 'btnReset', 'btnExpire', 'stLogical', 'stWritten', 'stRatio',
+      'stChunks', 'stUnique', 'stDups', 'stRam', 'stCont', 'stHoles', 'stFps', 'poolInfo'
     ].forEach(k => { el[k] = $(k); });
 
     buildControls();
@@ -38,6 +38,15 @@
     bindRange('cfgRedund', 'redundancy', v => state.cfg.redundancy = v / 100, () => { rebuild(); });
     bindRange('cfgBits', 'bits', v => { state.cfg.bits = v; }, () => { restart(); });
     bindRange('cfgSpeed', 'speed', v => { state.cfg.speed = v; }, null);
+    bindRange('cfgCont', 'containerKB', v => { state.cfg.containerKB = v; }, () => { rebuild(); });
+    bindRange('cfgRet', 'retention', v => { state.cfg.retention = v; }, null);
+
+    el.btnExpire.addEventListener('click', () => {
+      if (!state.run) return;
+      const res = state.run.expireFiles(state.cfg.retention);
+      state.lastExpire = res;
+      updateStats();
+    });
 
     el.btnPlay.addEventListener('click', () => {
       state.playing = !state.playing;
@@ -102,8 +111,11 @@
     state.dirty = true;
   }
 
-  let last = 0;
+  let last = 0, lastErr = null;
   function loop(ts) {
+    // kolejna klatka rejestrujemy ZANIM cokolwiek się wykonze, żeby błąd
+    // rysowania nie zabił symulacji
+    requestAnimationFrame(loop);
     const dt = Math.min(50, ts - last || 16);
     last = ts;
 
@@ -122,12 +134,16 @@
       updateStats();
     }
 
-    if (state.dirty !== false || state.playing) {
+    if (state.run && (state.dirty !== false || state.playing)) {
       const W = cv.clientWidth, H = cv.clientHeight;
       if (cv.width !== Math.round(W * dpr())) resize();
-      SIM.view.draw(ctx, cv.width / dpr(), cv.height / dpr(), state.run, state.cfg, state);
+      try {
+        SIM.view.draw(ctx, cv.width / dpr(), cv.height / dpr(), state.run, state.cfg, state);
+        lastErr = null;
+      } catch (e) {
+        if (lastErr !== e.message) { lastErr = e.message; console.error('błąd rysowania:', e); }
+      }
     }
-    requestAnimationFrame(loop);
   }
 
   function dpr() { return Math.min(2, window.devicePixelRatio || 1); }
@@ -136,6 +152,13 @@
     cv.height = Math.round(cv.clientHeight * dpr());
   }
   window.addEventListener('resize', () => { resize(); state.dirty = true; });
+
+  function fmtBytes(n) {
+    if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+    return n + ' B';
+  }
 
   function updateStats() {
     const st = state.run.st;
@@ -148,11 +171,17 @@
     el.stFps.textContent = state.run.chunker
       ? (state.run.chunker.fps / 1000).toFixed(0).replace('.', ',') + ' MB/s*'
       : '—';
+    el.stRam.textContent = fmtBytes(state.run.index.size * 24);
+    el.stCont.textContent = state.run.containers.length;
+    el.stHoles.textContent = fmtBytes(state.run.holesBytes);
+    el.stHoles.style.color = state.run.holesBytes > 0 ? 'var(--ref)' : '';
 
     const cur = state.run.fileIdx - 1;
     el.files.querySelectorAll('.frow').forEach((n, i) => {
-      n.classList.toggle('done', i < cur);
+      const f = state.run.ds.files[i];
+      n.classList.toggle('done', i < cur && !f.dead);
       n.classList.toggle('cur', i === cur);
+      n.classList.toggle('dead', !!f.dead);
     });
   }
 

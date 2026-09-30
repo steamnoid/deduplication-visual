@@ -61,6 +61,7 @@
   .fkind.copy { background: rgba(46,196,182,.16); color: var(--dupe); }
   .fkind.base { background: rgba(244,162,97,.16); color: var(--new); }
   .frow.done { color: var(--dim); }
+  .frow.dead { text-decoration: line-through; opacity: .45; }
   .frow.cur { background: #1a2740; border-color: var(--info); color: var(--text); }
 
   section.stage2 { display: grid; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; }
@@ -83,7 +84,7 @@
 <div id="app">
   <header>
     <h1>Maszyna dedupu</h1>
-    <span class="stage">etap 1 · bajty → chunki → indeks &nbsp;·&nbsp; * prędkość skanu w symulatorze, nie benchmark</span>
+    <span class="stage">etap 2 · bajty → chunki → indeks → kontenery &nbsp;·&nbsp; * prędkość skanu w symulatorze, nie benchmark</span>
     <span class="grow"></span>
     <span class="stage" id="poolInfo">…</span>
     <button class="btn" id="btnPlay">⏸ Pauza</button>
@@ -126,6 +127,24 @@
       </div>
 
       <div class="grp">
+        <h3>Kontenery i retencja</h3>
+        <label class="ctl">
+          <div class="row"><span class="n">wielkość kontenera</span><output id="cfgContVal"></output></div>
+          <input type="range" id="cfgCont" min="8" max="128" step="8" value="32">
+        </label>
+        <label class="ctl">
+          <div class="row"><span class="n">ile plików wygasa</span><output id="cfgRetVal"></output></div>
+          <input type="range" id="cfgRet" min="1" max="20" step="1" value="6">
+        </label>
+        <button class="btn" id="btnExpire" style="width:100%;margin-top:2px">⌫ Wygasz najstarsze pliki</button>
+        <p style="margin:9px 0 0;font-size:11px;color:var(--dim);line-height:1.45">
+          Wygaśnięcie pliku zmniejsza liczbę referencji do jego chunków. Te, które stracą
+          ostatnią referencję, zostawiają dziurę w kontenerze — miejsce, które trzeba
+          kiedyś posprzątać (GC).
+        </p>
+      </div>
+
+      <div class="grp">
         <h3>Pliki w kolejce</h3>
         <div class="files" id="files"></div>
       </div>
@@ -140,6 +159,9 @@
         <div class="stat"><div class="l">chunki</div><div class="v" id="stChunks">—</div></div>
         <div class="stat"><div class="l">unikalne</div><div class="v" id="stUnique" style="color:var(--violet)">—</div></div>
         <div class="stat"><div class="l">duplikaty</div><div class="v" id="stDups" style="color:var(--dupe)">—</div></div>
+        <div class="stat"><div class="l">indeks w RAM</div><div class="v" id="stRam" style="color:var(--violet);font-size:14px">—</div></div>
+        <div class="stat"><div class="l">kontenery</div><div class="v" id="stCont" style="font-size:14px">—</div></div>
+        <div class="stat"><div class="l">dziury</div><div class="v" id="stHoles" style="font-size:14px">—</div></div>
         <div class="stat"><div class="l">skan *</div><div class="v" id="stFps" style="font-size:13px">—</div></div>
       </div>
     </section>

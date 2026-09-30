@@ -204,79 +204,114 @@
     }
   }
 
+  /* ---------- kontenery na dysku ---------- */
+
+  class Container {
+    constructor(cap) { this.cap = cap; this.used = 0; this.chunks = []; }
+    get free() { return this.cap - this.used; }
+    get fill() { return this.used / this.cap; }
+  }
+
   /* ---------- indeks + statystyki ---------- */
 
   class Run {
     constructor(ds, cfg) {
       this.ds = ds; this.cfg = cfg;
-      this.index = new Map();          // fingerprint -> {chunkId, refs}
+      this.index = new Map();            // fingerprint -> {id, refs, size, bucket}
       this.BUCKETS = 1024;
       this.bucketCounts = new Uint32Array(this.BUCKETS);
-      this.isNew = new Uint8Array(1);   // 1 = chunk unikalny (zapisany)
+      this.isNew = new Uint8Array(1);   // 1 = chunk zapisany (unikalny)
+      this.chunkRefs = new Int32Array(1);// żywe referencje do chunków
+      this.byChunkId = [];               // chunkId -> {cont, off, len}
+      this.contHoles = [];               // kontener -> bajty zwolnione
+      this.marksByFile = new Map();      // fileId -> lista chunków tego pliku
+      this.containers = [];
+      this.containerSize = cfg.containerKB * 1024;
       this.chunkId = 0;
-      this.st = {
-        logical: 0, written: 0, chunks: 0, unique: 0, dups: 0,
-        bytesScanned: 0, ms: 0, peakIndex: 0, bucketHits: 0
-      };
       this.fileQueue = ds.files.map(f => f.i);
       this.fileIdx = 0;
       this.chunker = null;
       this.curFile = null;
-      this.lastChunks = [];            // ostatnie chunki do pokazania
-      this.history = { logical: [], ratio: [], ram: [], written: [], avg: [] };
+      this.fileChunkMarks = [];
+      this.tail = [];
+      this.st = {
+        logical: 0, written: 0, chunks: 0, unique: 0, dups: 0,
+        bytesScanned: 0, ms: 0, peakIndex: 0, bucketHits: 0,
+        expiredBytes: 0, expiredChunks: 0, expiredRefs: 0, gcRuns: 0, gcRewritten: 0, backups: 0
+      };
+      this.history = {
+        logical: [], ratio: [], ram: [], written: [], avg: [],
+        holes: [], containerFill: [], indexRam: []
+      };
     }
 
     get currentFile() { return this.curFile; }
-    get busy() { return this.chunker && !this.chunker.finished; }
+    get holesBytes() {
+      let h = 0;
+      for (let i = 0; i < this.contHoles.length; i++) h += this.contHoles[i];
+      return h;
+    }
+    get usedBytes() {
+      let u = 0;
+      for (const c of this.containers) u += c.used;
+      return u;
+    }
+    get diskBytes() { return this.containers.length * this.containerSize; }
+    get indexBytes() { return this.index.size * 24; }   // 16 B odcisk + 8 B lokalizacja
 
     startFile() {
-      if (this.fileIdx >= this.fileQueue.length) return false;
+      if (this.fileIdx >= this.fileQueue.length) { this.done = true; return false; }
       const f = this.ds.files[this.fileQueue[this.fileIdx++]];
       this.curFile = f;
       this.chunker = new Chunker(this.ds.pool, f.off, f.len, this.cfg.bits, this.cfg.fastCDC);
-      this.fileChunkMarks = [];        // status chunków bieżącego pliku
+      this.fileChunkMarks = [];
+      this.st.backups++;
       return true;
     }
 
+    /* jeden krok symulacji: budget bajtów do przetworzenia */
     step(budget) {
-      if (!this.chunker) { if (!this.startFile()) return null; }
+      if (!this.chunker && !this.startFile()) return null;
       const t0 = performance.now();
       const ch = this.chunker;
       const posBefore = ch.pos;
       const made = ch.step(budget);
       const ds = this.ds, st = this.st;
 
-      // zliczamy chunki zamykane w tym kroku
       for (let k = ch.lens.n - made; k < ch.lens.n; k++) {
         const cs = ch.cuts.get(k);
         const len = ch.lens.get(k);
-        const abs = ch.off + cs;
-        const f = fingerprint(ds.pool, abs, len);
-        let e = this.index.get(f);
+        const fp = fingerprint(ds.pool, ch.off + cs, len);
+        let e = this.index.get(fp);
+
         if (e === undefined) {
-          e = { id: this.chunkId, refs: 1, size: len, bucket: fpInt(f, this.BUCKETS) };
-          this.index.set(f, e);
-          if (this.isNew.length <= e.id) {
-            const b = new Uint8Array(Math.ceil((e.id + 1) * 1.6) + 16);
-            b.set(this.isNew); this.isNew = b;
-          }
-          this.isNew[e.id] = 1;
-          if (this.bucketCounts[e.bucket] > 0) this.st.bucketHits++;
+          e = { id: this.chunkId++, refs: 1, size: len, bucket: fpInt(fp, this.BUCKETS) };
+          this.index.set(fp, e);
+          this._grow(this.isNew, e.id); this.isNew[e.id] = 1;
+          this._grow(this.chunkRefs, e.id); this.chunkRefs[e.id] = 1;
+          if (this.bucketCounts[e.bucket] > 0) st.bucketHits++;
           this.bucketCounts[e.bucket]++;
-          this.chunkId++;
+          this.storeChunk(e, len);
           st.unique++;
           st.written += len;
         } else {
           e.refs++;
+          this._grow(this.chunkRefs, e.id);
+          this.chunkRefs[e.id]++;
           st.dups++;
         }
+
         st.chunks++;
         st.logical += len;
         this.fileChunkMarks.push(e.id);
-        if (!this.tail) this.tail = [];
         this.tail.push(e.id);
         if (this.tail.length > 600) this.tail.splice(0, this.tail.length - 600);
+
+        let m = this.marksByFile.get(this.curFile.i);
+        if (!m) { m = []; this.marksByFile.set(this.curFile.i, m); }
+        m.push(e.id);
       }
+
       st.bytesScanned += ch.pos - posBefore;
       st.ms += performance.now() - t0;
       st.peakIndex = Math.max(st.peakIndex, this.index.size);
@@ -288,31 +323,91 @@
       return made;
     }
 
+    _grow(arr, id) {
+      if (arr.length > id) return;
+      const b = new arr.constructor(Math.ceil((id + 1) * 1.6) + 16);
+      b.set(arr);
+      if (arr === this.isNew || arr === this.chunkRefs) this[arr === this.isNew ? 'isNew' : 'chunkRefs'] = b;
+      else this[arr === this.isNew ? 'isNew' : 'chunkRefs'] = b;
+    }
+
+    /* zapis nowego chunka do aktualnego kontenera */
+    storeChunk(e, len) {
+      let cont = this.containers[this.containers.length - 1];
+      if (!cont || cont.free < len) {
+        cont = new Container(this.containerSize);
+        this.containers.push(cont);
+        this.contHoles.push(0);
+      }
+      const off = cont.used;
+      cont.used += len;
+      cont.chunks.push(e.id);
+      this.byChunkId[e.id] = { cont: this.containers.length - 1, off, len };
+    }
+
+    /* retencja: wygasamy najstarsze pliki → referencje spadają,
+       chunki bez referencji zostawiają dziurę w kontenerze */
+    expireFiles(count) {
+      const doneFiles = this.fileQueue.slice(0, Math.max(0, this.fileIdx));
+      const victims = doneFiles.slice(0, count);
+      let freed = 0, dropped = 0, chunks = 0;
+      victims.forEach(fi => {
+        const f = this.ds.files[fi];
+        if (f.dead) return;
+        const marks = this.marksByFile.get(fi);
+        if (marks) {
+          for (let i = 0; i < marks.length; i++) {
+            const cid = marks[i];
+            if (this.chunkRefs[cid] == null) continue;
+            this.chunkRefs[cid]--;
+            chunks++;
+            if (this.chunkRefs[cid] === 0) {
+              const slot = this.byChunkId[cid];
+              if (slot) {
+                this.contHoles[slot.cont] += slot.len;
+                freed += slot.len;
+                dropped++;
+              }
+            }
+          }
+        }
+        f.dead = true;
+      });
+      this.st.expiredBytes += freed;
+      this.st.expiredChunks += dropped;
+      this.st.expiredRefs += chunks;
+      this.expireEvent = (this.expireEvent || 0) + 1;
+      return { freed, dropped, files: victims.length };
+    }
+
     sample() {
-      const h = this.history;
-      const st = this.st;
+      const h = this.history, st = this.st;
       h.logical.push(st.logical);
       h.written.push(st.written);
       h.ratio.push(st.written ? st.logical / st.written : 0);
       h.ram.push(this.index.size);
+      h.indexRam.push(this.indexBytes);
       h.avg.push(st.chunks ? st.logical / st.chunks : 0);
+      h.holes.push(this.holesBytes);
+      h.containerFill.push(this.containers.length
+        ? this.containers.reduce((a, c) => a + c.fill, 0) / this.containers.length : 0);
       if (h.ratio.length > 600) {
-        ['logical', 'written', 'ratio', 'ram', 'avg'].forEach(k => h[k].shift());
+        ['logical', 'written', 'ratio', 'ram', 'avg', 'holes', 'containerFill', 'indexRam']
+          .forEach(k => h[k].shift());
       }
     }
 
     get progress() {
-      const total = this.ds.files.length;
       let done = 0, bytes = 0;
       for (let i = 0; i < this.fileIdx - 1; i++) { done++; bytes += this.ds.files[this.fileQueue[i]].len; }
       if (this.curFile) bytes += this.chunker ? this.chunker.pos : 0;
-      return { files: done, filesTotal: total, bytes, bytesTotal: this.ds.poolSize };
+      return { files: done, filesTotal: this.ds.files.length, bytes, bytesTotal: this.ds.poolSize };
     }
   }
 
   /* ---------- eksport ---------- */
   NS.sim = {
-    IdList, TYPES, GEAR, fingerprint, fpInt, Chunker, Run,
+    IdList, TYPES, GEAR, fingerprint, fpInt, Chunker, Run, Container,
     buildDataset, makePool, fileName
   };
 

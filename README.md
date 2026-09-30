@@ -26,6 +26,16 @@ Strona z GIF-ami: **`gifs.html`** (galeria 27 animacji, kopiowanie ścieżek, `p
 
 Animacje mają własne sterowanie: suwaki maski, progu, rozmiaru cache, liczby próbek, przełączniki wariantów. Każda scena ma podpis „co widać”, a liczby na slajdzie zgadzają się z tym, co widać na ekranie.
 
+## Maszyna dedupu — interaktywny symulator
+
+`simulator.html` (przycisk **Symulator** w dolnym pasku decku) to działający symulator systemu dedupu, a nie opis. Bajty są w nim prawdziwe: pula danych to jeden `Uint8Array`, pliki to widoki (offset, długość), więc redundancja jest realnym powtórzeniem bajtów, a granice chunków liczy autentyczny gear hash (tabela 32-bitowa, `h = (h << 1) + G[bajt]`).
+
+Co widać na ekranie: pasek bajtów pliku z głowicą skanowania, lupę na 96 bajtów przy głowicy, stan hasza i maski, histogram długości chunków, filmstrip ostatnich chunków (pomarańczowe = nowe, zielone = znane), siatkę kontenerów na dysku z dziurami, wąski pasek 1024 kubełków indeksu, bilans i cztery wykresy przebiegu.
+
+Czym sterujesz: typ plików (obrazy VM / kod / logi / zrzuty bazy), liczba plików, suwak redundancji, liczba bitów maski (rozmiar chunka), wielkość kontenera, ile plików wygasa przy retencji, prędkość skanu. Przycisk **⌫ Wygasz najstarsze pliki** zmniejsza referencje do chunków i zostawia dziury w kontenerach — czyli pokazuje, skąd bierze się potrzeba garbage collection.
+
+Etapy symulatora: **S1** bajty → chunki → indeks (zrobione), **S2** zapis do kontenerów, retencja i dziury (zrobione), **S3** przełączniki architektury i porównanie zmian, **S4** GC, restore i oś czasu 30 dni, **S5** warstwa wyjaśnień.
+
 ## Co w środku
 
 53 slajdy, 8 rozdziałów, 27 animacji:
@@ -51,6 +61,10 @@ js/scenes/ch0..8.js   # animacje per rozdział
 js/scenes/extra.js    # animacje Extreme Binning i SiLo
 js/slides/ch0..8.js   # treść slajdów
 js/deck.js            # router, host sceny, przegląd
+simulator.html        # interaktywny symulator (S1–S2)
+js/sim/engine.js      # pula bajtów, gear hash, odcisk 64-bit, chunker, indeks, kontenery
+js/sim/view.js        # warstwa wizualna symulatora (canvas)
+js/sim/app.js         # okno, sterowanie, pętla
 render.html           # strona-renderka dla eksportu GIF
 tools/export-gifs.mjs # headless Chrome -> PNG -> gifenc -> GIF
 tools/shots.mjs       # zrzuty slajdów do QA

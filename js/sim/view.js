@@ -103,8 +103,8 @@
     const hZoom = Math.max(50, H * 0.125);
     const yZoom = yFile + hFile + G;
     const yHash = yZoom + hZoom + G;
-    const hHash = Math.max(74, H * 0.235);
-    const hIdx = Math.max(88, H * 0.24);
+    const hHash = Math.max(74, H * 0.225);
+    const hIdx = Math.max(110, H * 0.28);
     const yIdx = yHash + hHash + G;
     const ySpark = yIdx + hIdx + G;
     const hSpark = Math.max(54, H - ySpark - 6);
@@ -203,8 +203,8 @@
       text(ctx, hit ? '→ cięcie' : '→ dalej', M + 12, yHash + 64, { size: 11.5, weight: 700, color: hit ? C.save : C.muted });
       text(ctx, 'próg Min ' + ch.minSize + ' B', M + 96, yHash + 64, { size: 10.5, color: C.dim });
       // rozkład długości chunków bieżącego pliku
-      const hh2 = Math.max(34, hHash - 92);
-      drawLensHist(ctx, M + 12, yHash + 82, wHash - 24, hh2, run, C.cyan);
+      const hh2 = Math.max(30, hHash - 100);
+      drawLensHist(ctx, M + 12, yHash + 90, wHash - 24, hh2, run, C.cyan);
     }
 
     // filmstrip: ostatnie chunky ze wszystkich plików (koło bufora)
@@ -228,63 +228,71 @@
       xs, yHash + hHash - 2, { size: 10.5, color: C.dim });
 
 
-    /* ---------- indeks + statystyki ---------- */
-    const wIdx = innerW * 0.56;
-    text(ctx, '5 · indeks w RAM (' + run.BUCKETS + ' kubełków)', M, yIdx - 4, { size: 11, weight: 700, color: C.dim });
+    /* ---------- kontenery na dysku ---------- */
+    const wIdx = innerW * 0.62;
+    text(ctx, '5 · kontenery na dysku (' + SIM_KB(run.containerSize) + ' każdy)', M, yIdx - 4, { size: 11, weight: 700, color: C.dim });
     box(ctx, M, yIdx, wIdx, hIdx, { r: 8, fill: C.panel, stroke: C.line });
-    const B = run.BUCKETS, cols = 64, rowsN = B / cols;
-    const cw = (wIdx - 20) / cols, chh = (hIdx - 42) / rowsN;
-    let mxB = 1;
-    for (let i = 0; i < B; i++) if (run.bucketCounts[i] > mxB) mxB = run.bucketCounts[i];
+    drawContainers(ctx, M + 10, yIdx + 22, wIdx - 20, hIdx - 74, run);
+
+    // pasek indeksu (1024 kubełków, cienki)
+    const iw = wIdx - 20, ih = 16;
+    const iy = yIdx + hIdx - 30;
+    const B = run.BUCKETS;
+    text(ctx, 'indeks: ' + run.index.size.toLocaleString('pl-PL') + ' wpisów po 24 B = ' +
+      fmtB(run.index.size * 24) + ' RAM  ·  ' + B + ' kubełków, kolizje ' +
+      (run.index.size ? Math.round(run.st.bucketHits / run.index.size * 100) : 0) + ' %',
+      M + 10, yIdx + hIdx - 44, { size: 10, color: C.dim });
+    const cw = iw / B;
     for (let i = 0; i < B; i++) {
       const v = run.bucketCounts[i];
-      const x = M + 10 + (i % cols) * cw, y = yIdx + 24 + ((i / cols) | 0) * chh;
-      box(ctx, x, y, cw - 1, chh - 1, {
-        r: 1,
-        fill: v ? alpha(C.violet, 0.18 + 0.72 * (v / mxB)) : '#0e1524',
-        stroke: v ? alpha(C.violet, 0.5) : '#182338'
-      });
+      if (!v) continue;
+      ctx.fillStyle = alpha(C.violet, 0.25 + 0.65 * Math.min(1, v / 30));
+      ctx.fillRect(M + 10 + i * cw, iy + ih - 4 - Math.min(1, v / 30) * (ih - 6), Math.max(1, cw - 0.4), ih - 6);
     }
-    const per = st.unique / B;
-    text(ctx, st.unique.toLocaleString('pl-PL') + ' wpisów · średnio ' + per.toFixed(1) +
-      ' / kubełek · kolizje: ' + st.bucketHits.toLocaleString('pl-PL') +
-      ' (' + (st.unique ? Math.round(st.bucketHits / st.unique * 100) : 0) + ' % nowych chunków)',
-      M + 10, yIdx + hIdx - 10, { size: 10.5, color: C.muted, mono: true });
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+    ctx.strokeRect(M + 10.5, iy + 0.5, iw - 1, ih - 1);
 
-    // statystyki
+    /* ---------- statystyki ---------- */
     const sx = M + wIdx + 16, sw = W - M - sx;
     text(ctx, '6 · bilans', sx, yIdx - 4, { size: 11, weight: 700, color: C.dim });
-    const ratio = st.written ? st.logical / st.written : 0;
+    const st2 = st;
+    const holes = run.holesBytes;
+    const ratio = st2.written ? st2.logical / st2.written : 0;
     const rowsDef = [
-      { n: 'bajty logiczne', v: fmtB(st.logical), c: C.info },
-      { n: 'bajty zapisane', v: fmtB(st.written), c: C.new },
-      { n: 'chunki', v: st.chunks.toLocaleString('pl-PL'), c: C.text },
-      { n: 'unikalne chunki', v: st.unique.toLocaleString('pl-PL'), c: C.violet },
-      { n: 'referencje (duplikaty)', v: st.dups.toLocaleString('pl-PL'), c: C.dupe },
-      { n: 'dedup ratio', v: ratio ? ratio.toFixed(2) + ' : 1' : '—', c: C.save, big: true }
+      { n: 'bajty logiczne', v: fmtB(st2.logical), c: C.info },
+      { n: 'bajty na dysku', v: fmtB(st2.written), c: C.new },
+      { n: 'dziury (wygasłe chunki)', v: fmtB(holes), c: holes ? C.ref : C.dim },
+      { n: 'chunki / unikalne', v: st2.chunks.toLocaleString('pl-PL') + ' / ' + st2.unique.toLocaleString('pl-PL'), c: C.muted },
+      { n: 'referencje', v: st2.dups.toLocaleString('pl-PL'), c: C.dupe },
+      { n: 'kontenery', v: String(run.containers.length), c: C.violet },
+      { n: 'indeks w RAM', v: fmtB(run.index.size * 24), c: C.violet },
+      { n: 'dedup ratio', v: st2.written ? (st2.logical / st2.written).toFixed(2) + ' : 1' : '—', c: C.save, big: true }
     ];
-    const rh = Math.min(20, (hIdx - 6) / rowsDef.length);
+    const rh = Math.min(19, (hIdx - 20) / rowsDef.length);
     rowsDef.forEach((r, i) => {
       const y = yIdx + 12 + i * rh;
-      text(ctx, r.n, sx, y, { size: 11, color: C.muted });
-      text(ctx, r.v, sx + sw, y, { size: r.big ? 14 : 12, weight: 700, color: r.c, align: 'right', mono: true });
+      text(ctx, r.n, sx, y, { size: 10.5, color: C.muted });
+      text(ctx, r.v, sx + sw, y, { size: r.big ? 13.5 : 11.5, weight: 700, color: r.c, align: 'right', mono: true });
     });
-    // pasek udziału zapisanych bajtów
-    const share = st.logical ? st.written / st.logical : 0;
-    text(ctx, 'udział danych na dysku', sx, yIdx + hIdx - 22, { size: 10, color: C.dim });
-    bar(ctx, sx, yIdx + hIdx - 14, sw, 8, share, { fill: C.new, bg: '#1b2440' });
-    text(ctx, Math.round(share * 100) + ' % puli logicznej', sx + sw, yIdx + hIdx - 10, { size: 10, color: C.new, align: 'right', mono: true });
+    const share = st2.logical ? st2.written / st2.logical : 0;
+    const bw2 = Math.min(120, sw);
+    text(ctx, 'zapis / logiczne', sx, yIdx + hIdx - 24, { size: 10, color: C.dim });
+    bar(ctx, sx, yIdx + hIdx - 16, bw2, 8, share, { fill: C.new, bg: '#1b2440' });
+    text(ctx, Math.round(share * 100) + ' %', sx + bw2 + 8, yIdx + hIdx - 12, { size: 10, color: C.new, mono: true });
+    const eff = run.containers.length * run.containerSize;
+    text(ctx, 'kontenery zajmują ' + fmtB(eff) + (holes > 0 ? ' (dziury ' + Math.round(holes / eff * 100) + ' %)' : ''),
+      sx, yIdx + hIdx - 2, { size: 10, color: holes ? C.ref : C.dim });
 
     /* ---------- przebieg ---------- */
     const sw2 = (innerW - 24) / 4;
     spark(ctx, M, ySpark, sw2, hSpark, run.history.ratio,
       { color: C.save, min: 1, max: Math.max(2, Math.max.apply(null, run.history.ratio.concat([1])) * 1.1), label: 'dedup ratio', value: ratio.toFixed(2) });
-    spark(ctx, M + (sw2 + 8), ySpark, sw2, hSpark, run.history.ram,
-      { color: C.violet, label: 'wpisy w indeksie', value: st.unique.toLocaleString('pl-PL') });
-    spark(ctx, M + 2 * (sw2 + 8), ySpark, sw2, hSpark, run.history.written,
-      { color: C.new, label: 'bajty zapisane', value: fmtB(st.written) });
-    spark(ctx, M + 3 * (sw2 + 8), ySpark, sw2, hSpark, run.history.avg,
-      { color: C.dupe, label: 'średni chunk (B)', value: st.chunks ? Math.round(st.logical / st.chunks) + ' B' : '—' });
+    spark(ctx, M + (sw2 + 8), ySpark, sw2, hSpark, run.history.indexRam,
+      { color: C.violet, label: 'indeks w RAM', value: fmtB(run.index.size * 24) });
+    spark(ctx, M + 2 * (sw2 + 8), ySpark, sw2, hSpark, run.history.containerFill,
+      { color: C.new, label: 'średnie wypełnienie kontenerów', value: Math.round((run.history.containerFill[run.history.containerFill.length - 1] || 0) * 100) + ' %' });
+    spark(ctx, M + 3 * (sw2 + 8), ySpark, sw2, hSpark, run.history.holes,
+      { color: run.holesBytes ? C.ref : C.dupe, label: 'dziury (wygasłe chunki)', value: fmtB(run.holesBytes) });
   }
 
   function drawLensHist(ctx, x, y, w, h, run, col) {
@@ -308,6 +316,65 @@
     }
     text(ctx, '0', x, y + h + 6, { size: 9, color: C.dim });
     text(ctx, mxL + ' B', x + w, y + h + 6, { size: 9, color: C.dim, align: 'right' });
+  }
+
+  function SIM_KB(b) { return (b / 1024).toFixed(0) + ' KB'; }
+
+  /* siatka kontenerów: wypełnienie, dziury, świeżo zapisany */
+  function drawContainers(ctx, x, y, w, h, run) {
+    const conts = run.containers;
+    if (!conts.length) {
+      text(ctx, 'jeszcze nic nie zapisano', x + 4, y + 12, { size: 11.5, color: C.dim });
+      return;
+    }
+    const cols = Math.max(6, Math.min(24, Math.floor(w / 52)));
+    const cw = (w - (cols - 1) * 5) / cols;
+    const ch = Math.min(40, (h - (Math.ceil(conts.length / cols) - 1) * 5));
+    const rowsN = Math.ceil(conts.length / cols);
+    const maxRows = Math.max(1, Math.floor((h + 5) / (ch + 5)));
+    const from = Math.max(0, conts.length - cols * maxRows);
+
+    for (let i = from; i < conts.length; i++) {
+      const c = conts[i];
+      const k = i - from;
+      const cx = x + (k % cols) * (cw + 5);
+      const cy = y + ((k / cols) | 0) * (ch + 5);
+      const fill = c.fill;
+      const holes = run.contHoles[i] || 0;
+      const holeFrac = c.cap ? holes / c.cap : 0;
+      box(ctx, cx, cy, cw, ch, { r: 4, fill: '#0b1220', stroke: C.line });
+      // zapisane bajty
+      const usedH = (ch - 4) * Math.min(1, fill);
+      ctx.fillStyle = alpha(C.new, 0.75);
+      ctx.fillRect(cx + 2, cy + ch - 2 - usedH, cw - 4, usedH);
+      // dziury
+      if (holeFrac > 0) {
+        const holeH = (ch - 4) * Math.min(1, holeFrac);
+        ctx.save();
+        ctx.strokeStyle = alpha(C.ref, 0.9); ctx.lineWidth = 1;
+        ctx.setLineDash([2, 2]);
+        ctx.strokeRect(cx + 2.5, cy + ch - 2 - holeH + 1, cw - 5, holeH - 2);
+        ctx.restore();
+      }
+      // świeżo zapełniany
+      if (i === conts.length - 1 && fill > 0.02) {
+        const top = cy + ch - 2 - usedH;
+        ctx.fillStyle = alpha(C.save, 0.9);
+        ctx.fillRect(cx + 2, top, cw - 4, 2);
+      }
+      text(ctx, Math.round(fill * 100) + '', cx + 3, cy + 8, {
+        size: 8.5, color: fill > 0.9 ? C.text : C.dim, weight: 700
+      });
+    }
+    if (from > 0) {
+      text(ctx, '+' + from + ' starszych kontenerów', x + 2, y + h + 12, { size: 10, color: C.dim });
+    }
+    // legenda
+    const lx = x + w - 8;
+    box(ctx, lx - 132, y + h - 12, 8, 8, { fill: alpha(C.new, 0.75) });
+    text(ctx, 'zapisane', lx - 120, y + h - 8, { size: 9.5, color: C.dim });
+    box(ctx, lx - 66, y + h - 12, 8, 8, { fill: 'none', stroke: C.ref, dash: [2, 2] });
+    text(ctx, 'dziury', lx - 54, y + h - 8, { size: 9.5, color: C.dim });
   }
 
   function countNew(run, marks) {
