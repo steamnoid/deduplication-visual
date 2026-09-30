@@ -217,8 +217,11 @@
   class Run {
     constructor(ds, cfg) {
       this.ds = ds; this.cfg = cfg;
-      this.index = new Map();            // fingerprint -> {id, refs, size, bucket}
       this.BUCKETS = 1024;
+      // prawda o tym, co jest na dysku: fp -> lista chunkId (może być >1 przy false negative)
+      this.dataIndex = new Map();
+      // strategia indeksowania (rozdział 4) — decyduje o koszcie odczytu
+      this.makeIndex();
       this.bucketCounts = new Uint32Array(this.BUCKETS);
       this.isNew = new Uint8Array(1);   // 1 = chunk zapisany (unikalny)
       this.chunkRefs = new Int32Array(1);// żywe referencje do chunków
@@ -237,7 +240,8 @@
       this.st = {
         logical: 0, written: 0, chunks: 0, unique: 0, dups: 0,
         bytesScanned: 0, ms: 0, peakIndex: 0, bucketHits: 0,
-        expiredBytes: 0, expiredChunks: 0, expiredRefs: 0, gcRuns: 0, gcRewritten: 0, backups: 0
+        expiredBytes: 0, expiredChunks: 0, expiredRefs: 0, gcRuns: 0, gcRewritten: 0,
+        backups: 0, falseNeg: 0
       };
       this.history = {
         logical: [], ratio: [], ram: [], written: [], avg: [],
@@ -257,7 +261,13 @@
       return u;
     }
     get diskBytes() { return this.containers.length * this.containerSize; }
-    get indexBytes() { return this.index.size * 24; }   // 16 B odcisk + 8 B lokalizacja
+    get indexEntries() { return this.idx ? this.idx.st.entries : 0; }
+    get indexBytes() { return this.idx ? this.idx.ramBytes : 0; }
+    get idxStats() { return this.idx ? this.idx.st : null; }
+
+    makeIndex() {
+      this.idx = SIM.indices.makeIndex(this.cfg.indexKind || 'hash', this.cfg.segChunks);
+    }
 
     startFile() {
       if (this.fileIdx >= this.fileQueue.length) { this.done = true; return false; }
@@ -266,6 +276,7 @@
       this.chunker = new Chunker(this.ds.pool, f.off, f.len, this.cfg.bits, this.cfg.fastCDC);
       this.fileChunkMarks = [];
       this.st.backups++;
+      if (this.idx) this.idx.beginFile(f.i);
       return true;
     }
 
@@ -282,39 +293,50 @@
         const cs = ch.cuts.get(k);
         const len = ch.lens.get(k);
         const fp = fingerprint(ds.pool, ch.off + cs, len);
-        let e = this.index.get(fp);
+        const bucket = fpInt(fp, this.BUCKETS);
 
-        if (e === undefined) {
-          e = { id: this.chunkId++, refs: 1, size: len, bucket: fpInt(fp, this.BUCKETS) };
-          this.index.set(fp, e);
+        // 1) strategia indeksu odpowiada, ile kosztuje sprawdzenie i czy w ogóle widzi duplikat
+        const res = this.idx.lookup(fp);
+        const known = this.dataIndex.get(fp);
+        const onDisk = known && known.length > 0;
+
+        let cid;
+        if (res.hit && onDisk) {
+          // duplikat: podbijamy referencję ostatniej kopii na dysku
+          cid = known[known.length - 1];
+          this._grow(this.chunkRefs, cid);
+          this.chunkRefs[cid]++;
+          st.dups++;
+        } else {
+          if (!res.hit && onDisk) st.falseNeg++;    // duplikat, którego indeks nie zobaczył
+          const e = { id: this.chunkId++, refs: 1, size: len, bucket };
+          cid = e.id;
           this._grow(this.isNew, e.id); this.isNew[e.id] = 1;
           this._grow(this.chunkRefs, e.id); this.chunkRefs[e.id] = 1;
-          if (this.bucketCounts[e.bucket] > 0) st.bucketHits++;
-          this.bucketCounts[e.bucket]++;
+          if (this.bucketCounts[bucket] > 0) st.bucketHits++;
+          this.bucketCounts[bucket]++;
           this.storeChunk(e, len);
           st.unique++;
           st.written += len;
-        } else {
-          e.refs++;
-          this._grow(this.chunkRefs, e.id);
-          this.chunkRefs[e.id]++;
-          st.dups++;
+          let arr = this.dataIndex.get(fp);
+          if (!arr) { arr = []; this.dataIndex.set(fp, arr); }
+          arr.push(e.id);
         }
 
         st.chunks++;
         st.logical += len;
-        this.fileChunkMarks.push(e.id);
-        this.tail.push(e.id);
+        this.fileChunkMarks.push(cid);
+        this.tail.push(cid);
         if (this.tail.length > 600) this.tail.splice(0, this.tail.length - 600);
 
         let m = this.marksByFile.get(this.curFile.i);
         if (!m) { m = []; this.marksByFile.set(this.curFile.i, m); }
-        m.push(e.id);
+        m.push(cid);
       }
 
       st.bytesScanned += ch.pos - posBefore;
       st.ms += performance.now() - t0;
-      st.peakIndex = Math.max(st.peakIndex, this.index.size);
+      st.peakIndex = Math.max(st.peakIndex, this.indexEntries);
 
       if (ch.finished) {
         this.sample();
@@ -385,8 +407,9 @@
       h.logical.push(st.logical);
       h.written.push(st.written);
       h.ratio.push(st.written ? st.logical / st.written : 0);
-      h.ram.push(this.index.size);
+      h.ram.push(this.indexEntries);
       h.indexRam.push(this.indexBytes);
+      h.falseNeg = st.falseNeg;
       h.avg.push(st.chunks ? st.logical / st.chunks : 0);
       h.holes.push(this.holesBytes);
       h.containerFill.push(this.containers.length

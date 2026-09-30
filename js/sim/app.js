@@ -5,7 +5,8 @@
   const state = {
     cfg: {
       type: 'vm', files: 40, fileKB: 48, redundancy: 0.55,
-      bits: 5, fastCDC: true, speed: 1, containerKB: 32, retention: 6
+      bits: 5, fastCDC: true, speed: 1, containerKB: 32, retention: 6,
+      indexKind: 'hash', segChunks: 16
     },
     run: null, playing: true, dirty: true
   };
@@ -19,8 +20,9 @@
     cv = $('cv');
     ctx = cv.getContext('2d', { alpha: false });
     ['cfgType', 'cfgFiles', 'cfgRedund', 'cfgBits', 'cfgSpeed', 'cfgCont', 'cfgRet',
+      'cfgIndex', 'cfgSeg', 'cmpBtn', 'cmpPanel', 'cmpBody', 'cmpClose',
       'files', 'btnPlay', 'btnReset', 'btnExpire', 'stLogical', 'stWritten', 'stRatio',
-      'stChunks', 'stUnique', 'stDups', 'stRam', 'stCont', 'stHoles', 'stFps', 'poolInfo'
+      'stChunks', 'stUnique', 'stDups', 'stIdx', 'stCont', 'stHoles', 'stFps', 'poolInfo'
     ].forEach(k => { el[k] = $(k); });
 
     buildControls();
@@ -38,6 +40,21 @@
     bindRange('cfgRedund', 'redundancy', v => state.cfg.redundancy = v / 100, () => { rebuild(); });
     bindRange('cfgBits', 'bits', v => { state.cfg.bits = v; }, () => { restart(); });
     bindRange('cfgSpeed', 'speed', v => { state.cfg.speed = v; }, null);
+    el.cfgIndex.innerHTML = Object.entries(SIM.INDEX_KINDS)
+      .map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join('');
+    el.cfgIndex.value = state.cfg.indexKind;
+    el.cfgIndex.addEventListener('change', e => {
+      state.cfg.indexKind = e.target.value;
+      syncSeg();
+      rebuild();
+    });
+    bindRange('cfgSeg', 'segChunks', v => { state.cfg.segChunks = v; }, () => { rebuild(); });
+    syncSeg();
+
+    el.cmpBtn.addEventListener('click', openCompare);
+    el.cmpClose.addEventListener('click', closeCompare);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCompare(); });
+
     bindRange('cfgCont', 'containerKB', v => { state.cfg.containerKB = v; }, () => { rebuild(); });
     bindRange('cfgRet', 'retention', v => { state.cfg.retention = v; }, null);
 
@@ -54,6 +71,61 @@
     });
     el.btnReset.addEventListener('click', () => { rebuild(); state.playing = true; el.btnPlay.textContent = '⏸ Pauza'; });
   }
+
+  function syncSeg() {
+    const row = document.getElementById('rowSeg');
+    if (row) row.style.display = state.cfg.indexKind === 'silo' ? '' : 'none';
+  }
+
+  function fmt(n) { return n.toLocaleString('pl-PL'); }
+  function kb(n) { return (n / 1024).toFixed(1) + ' KB'; }
+
+  function openCompare() {
+    const cfg = state.cfg;
+    const t0 = performance.now();
+    const { chunked } = SIM.compare.prepare(cfg);
+    const rows = ['hash', 'eb', 'silo'].map(k => {
+      const r = SIM.compare.simulate({ ...cfg, indexKind: k }, chunked);
+      r.kind = k;
+      return r;
+    });
+    const ms = Math.round(performance.now() - t0);
+    const cur = rows.find(r => r.kind === cfg.indexKind);
+
+    const cell = (r, k) => {
+      const val = r[k];
+      const better = {
+        indexRam: 'min', diskReads: 'min', falseNeg: 'min', ratio: 'max', reads: 'min'
+      }[k];
+      const best = better === 'min' ? Math.min.apply(null, rows.map(x => x[k]))
+        : Math.max.apply(null, rows.map(x => x[k]));
+      const isBest = val === best && rows.filter(x => x[k] === best).length === 1;
+      const show = k === 'ratio' ? val.toFixed(2) + ' : 1' : fmt(Math.round(val));
+      return '<td class="' + (isBest ? 'best' : '') + '">' + show + '</td>';
+    };
+
+    el.cmpBody.innerHTML =
+      '<p class="lead">Ten sam zbiór i te same granice chunków — różni się tylko strategia indeksu. ' +
+      'Policzone w ' + fmt(chunked.n) + ' krokach w ' + ms + ' ms.</p>' +
+      '<table><thead><tr><th>strategia</th><th>indeks w RAM</th><th>seeki na dysk</th>' +
+      '<th>odczyty sekwencyjne</th><th>pominięte duplikaty</th><th>dedup ratio</th></tr></thead><tbody>' +
+      rows.map(r =>
+        '<tr class="' + (r.kind === cfg.indexKind ? 'cur' : '') + '">' +
+        '<th>' + r.label + (r.kind === cfg.indexKind ? ' <em>— teraz</em>' : '') + '</th>' +
+        cell(r, 'indexRam') + cell(r, 'diskReads') + cell(r, 'seqReads') +
+        cell(r, 'falseNeg') + cell(r, 'ratio') + '</tr>').join('') +
+      '</tbody></table>' +
+      '<p class="note">Komendy: ' + chunked.n + ' chunków w kolejności plików. ' +
+      'Twój wybór: ' + SIM.indices.makeIndex(cfg.indexKind, cfg.segChunks).note() + '. ' +
+      'Wariant zaznaczony <em class="best">zielonym</em> jest najlepszy w danej kolumnie.</p>' +
+      '<p class="note">Zaproponowany scenariusz: <b>pełna tablica hash</b> daje najlepsze ratio i zero ' +
+      'seeków, ale indeks rośnie z liczbą chunków. <b>Extreme Binning</b> trzyma w RAMie wpis na plik, ' +
+      'więc przy tysiącach plików indeks jest znikomy — kosztem jednego odczytu indeksu podobnego pliku. ' +
+      '<b>SiLo</b> to kompromis: reprezentant na segment, cały segment wczytujesz jednym prefetchem.</p>';
+    el.cmpPanel.hidden = false;
+    void cur;
+  }
+  function closeCompare() { el.cmpPanel.hidden = true; }
 
   function bindRange(id, key, set, onChange) {
     const input = $(id), out = $(id + 'Val');
@@ -171,10 +243,15 @@
     el.stFps.textContent = state.run.chunker
       ? (state.run.chunker.fps / 1000).toFixed(0).replace('.', ',') + ' MB/s*'
       : '—';
-    el.stRam.textContent = fmtBytes(state.run.index.size * 24);
     el.stCont.textContent = state.run.containers.length;
     el.stHoles.textContent = fmtBytes(state.run.holesBytes);
     el.stHoles.style.color = state.run.holesBytes > 0 ? 'var(--ref)' : '';
+    const is = state.run.idxStats;
+    el.stIdx.textContent = fmtBytes(state.run.indexBytes);
+    el.stIdx.title = is
+      ? (is.disk + ' seeków na dysk · ' + is.seq + ' odczytów sekwencyjnych · ' +
+        state.run.st.falseNeg + ' pominiętych duplikatów')
+      : '';
 
     const cur = state.run.fileIdx - 1;
     el.files.querySelectorAll('.frow').forEach((n, i) => {

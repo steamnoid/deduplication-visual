@@ -34,7 +34,17 @@ Co widać na ekranie: pasek bajtów pliku z głowicą skanowania, lupę na 96 ba
 
 Czym sterujesz: typ plików (obrazy VM / kod / logi / zrzuty bazy), liczba plików, suwak redundancji, liczba bitów maski (rozmiar chunka), wielkość kontenera, ile plików wygasa przy retencji, prędkość skanu. Przycisk **⌫ Wygasz najstarsze pliki** zmniejsza referencje do chunków i zostawia dziury w kontenerach — czyli pokazuje, skąd bierze się potrzeba garbage collection.
 
-Etapy symulatora: **S1** bajty → chunki → indeks (zrobione), **S2** zapis do kontenerów, retencja i dziury (zrobione), **S3** przełączniki architektury i porównanie zmian, **S4** GC, restore i oś czasu 30 dni, **S5** warstwa wyjaśnień.
+**Trzy strategie indeksu (rozdział 4), wszystkie napisane jako symulacja odpytywania:**
+
+| strategia | model | typowy wynik na 1,9 MB zbioru |
+|---|---|---|
+| pełna tablica hash | jeden wpis na chunk, jeden losowy odczyt RAM na chunk | 610 KB RAM, 0 seeków, 0 pominiętych duplikatów |
+| Extreme Binning | jeden wpis RAM na plik (minimalny fingerprint); trafienie = jeden seek i odczyt indeksu podobnego pliku | 456 B RAM, 21 seeków, 416 pominiętych duplikatów |
+| SiLo | reprezentant na segment pliku; trafienie = prefetch całego segmentu (1 seek + seria odczytów sekwencyjnych) | 39 KB RAM, 1721 seeków, 351 pominiętych duplikatów |
+
+Przycisk **⇄ Porównaj strategie na tym zbiorze** liczy chunking raz, a potem przepuszcza te same granice przez wszystkie strategie — dzięki temu porównujesz indeks, a nie chunker. Wynik wychodzi w ~50 ms dla 47 tys. chunków.
+
+Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie (zrobione), **S4** GC, restore i oś czasu 30 dni, **S5** warstwa wyjaśnień.
 
 ## Co w środku
 

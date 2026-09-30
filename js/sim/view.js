@@ -238,10 +238,11 @@
     const iw = wIdx - 20, ih = 16;
     const iy = yIdx + hIdx - 30;
     const B = run.BUCKETS;
-    text(ctx, 'indeks: ' + run.index.size.toLocaleString('pl-PL') + ' wpisów po 24 B = ' +
-      fmtB(run.index.size * 24) + ' RAM  ·  ' + B + ' kubełków, kolizje ' +
-      (run.index.size ? Math.round(run.st.bucketHits / run.index.size * 100) : 0) + ' %',
-      M + 10, yIdx + hIdx - 44, { size: 10, color: C.dim });
+    const is = run.idxStats;
+    text(ctx, (is ? (is.disk ? is.disk + ' seeków na dysk' : '0 seeków') + '  ·  ' +
+      is.seq + ' odczytów sekwencyjnych  ·  ' + st.bucketHits + ' kolizji  ·  ' : '') +
+      st.falseNeg + ' pominiętych duplikatów',
+      M + 10, yIdx + hIdx - 44, { size: 10, color: st.falseNeg ? C.ref : C.dim });
     const cw = iw / B;
     for (let i = 0; i < B; i++) {
       const v = run.bucketCounts[i];
@@ -265,7 +266,8 @@
       { n: 'chunki / unikalne', v: st2.chunks.toLocaleString('pl-PL') + ' / ' + st2.unique.toLocaleString('pl-PL'), c: C.muted },
       { n: 'referencje', v: st2.dups.toLocaleString('pl-PL'), c: C.dupe },
       { n: 'kontenery', v: String(run.containers.length), c: C.violet },
-      { n: 'indeks w RAM', v: fmtB(run.index.size * 24), c: C.violet },
+      { n: 'indeks w RAM (' + (run.cfg.indexKind === 'eb' ? 'EB' : run.cfg.indexKind === 'silo' ? 'SiLo' : 'hash') + ')',
+        v: fmtB(run.indexBytes), c: C.violet },
       { n: 'dedup ratio', v: st2.written ? (st2.logical / st2.written).toFixed(2) + ' : 1' : '—', c: C.save, big: true }
     ];
     const rh = Math.min(19, (hIdx - 20) / rowsDef.length);
@@ -288,7 +290,7 @@
     spark(ctx, M, ySpark, sw2, hSpark, run.history.ratio,
       { color: C.save, min: 1, max: Math.max(2, Math.max.apply(null, run.history.ratio.concat([1])) * 1.1), label: 'dedup ratio', value: ratio.toFixed(2) });
     spark(ctx, M + (sw2 + 8), ySpark, sw2, hSpark, run.history.indexRam,
-      { color: C.violet, label: 'indeks w RAM', value: fmtB(run.index.size * 24) });
+      { color: C.violet, label: 'indeks w RAM', value: fmtB(run.indexBytes) });
     spark(ctx, M + 2 * (sw2 + 8), ySpark, sw2, hSpark, run.history.containerFill,
       { color: C.new, label: 'średnie wypełnienie kontenerów', value: Math.round((run.history.containerFill[run.history.containerFill.length - 1] || 0) * 100) + ' %' });
     spark(ctx, M + 3 * (sw2 + 8), ySpark, sw2, hSpark, run.history.holes,
