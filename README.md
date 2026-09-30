@@ -128,7 +128,28 @@ Maski są liczone względem wybranej średniej (`s = bits+2`, `a = bits`, `l = b
 | 4 KB | średnia 2809 B, rozstęp 7087 B | średnia 2731 B, rozstęp 3586 B |
 | 8 KB | średnia 5174 B, rozstęp 13336 B | średnia 8937 B, rozstęp 8509 B |
 
-**Zastrzeżenie o skali, które trzeba powiedzieć wprost:** dane symulatora to powielone bloki 4096 B ze wspólnej biblioteki. Punkty cięcia wracają, więc rozkład rozmiarów jest znacznie bardziej skoncentrowany niż na prawdziwych plikach — w pliku 96 KB przy średniej 8 KB wychodzi 19 chunków, ale tylko 8 unikalnych rozmiarów. Histogram pokazuje **kierunek zmian** (normalizacja zacina rozkład), a nie jest benchmarkiem. To ostrzeżenie stoi też w interfejsie.
+### Czego symulator NIE potwierdza (albo wręcz wyklucza)
+
+`tools/measure-chunking.cjs` (`FILE_KB=1024 node tools/measure-chunking.cjs`) sprawdza, ile bajtów kopii z wstawionymi bajtami na początku wciąż trafia do duplikatów — czyli czy granice chunków potrafią się z powrotem zsynchronizować. Wynik na plikach 1 MB:
+
+| średnia chunka | bez NC | z NC | NC + próg min |
+|---|---|---|---|
+| 1 KB (1024 chunków) | 0,994 | 0,995 | 0,995 |
+| 4 KB (256 chunków) | 0,991 | 0,986 | 0,986 |
+| 8 KB (128 chunków) | 0,991 | 0,976 | 0,976 |
+
+**Mechanizm działa:** po wstawce 4096 B na początku 97,6–99,5% bajtów kopii wciąż jest duplikatem. Granice wracają do zgodności niemal natychmiast — to jest sedno content-defined chunkingu.
+
+**Ale dwie rzeczy z artykułu nie potwierdzają się na tych danych, i mówimy o tym wprost:**
+
+1. **Próg minimum nie kosztuje tu nic** — 0,0% pokrycia we wszystkich konfiguracjach. Artykuł podaje, że skipping obcina ratio istotnie. U nas jest to nieodczuwalne, bo znormalizowane chunking i tak nie generuje krótkich chunków, a przy progu 1/4 średniej wszystkie granice i tak są powyżej progu.
+2. **Normalizacja nie daje tu przewagi w pokryciu** — jest neutralna albo minimalnie gorsza (przy 8 KB: 0,991 → 0,976). Artykuł mówi o poprawie ratio i przepustowości.
+
+Powód jest metodologiczny, nie implementacyjny: artykuł mierzy na zbiorach o rozmiarze gigabajtów, gdzie po przesunięciu granic wracają **tysiące** chunków. Nasze pliki mają 1 MB, czyli 128–1024 chunków, a po przesunięciu synchronizacja jest jednorazowa. Narzędzie samo ostrzega, gdy na plik przypada mniej niż 50 chunków — przy 64 KB i chunkach 8 KB wychodzi ich 8 i wynik skacze z 0,99 do 0,63 wyłącznie z powodu szumu statystycznego.
+
+Wniosek: symulator dobrze pokazuje **mechanizm** (przesunięcie granic, MaskS/MaskL, wartości masek z Algorithm 1), ale **nie jest w stanie zweryfikować ilościowych twierdzeń o ratio z artykułu**. Liczby z rozdziału 3 prezentacji pozostają więc cytatem z publikacji, a nie pomiarem z tego symulatora — i tak są w slajdach oznaczone.
+
+**Zastrzeżenie o skali danych, które trzeba powiedzieć wprost:** dane symulatora to powielone bloki 4096 B ze wspólnej biblioteki. Punkty cięcia wracają, więc rozkład rozmiarów jest znacznie bardziej skoncentrowany niż na prawdziwych plikach — w pliku 96 KB przy średniej 8 KB wychodzi 19 chunków, ale tylko 8 unikalnych rozmiarów. Histogram pokazuje **kierunek zmian** (normalizacja zacina rozkład), a nie jest benchmarkiem. To ostrzeżenie stoi też w interfejsie.
 
 ### Znormalizowane chunking (FastCDC, rozdział 3)
 

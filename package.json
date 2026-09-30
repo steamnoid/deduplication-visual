@@ -10,7 +10,8 @@
     "gifs:one": "node tools/export-gifs.mjs --scene",
     "poster": "node tools/export-gifs.mjs --poster-only",
     "test": "node tools/smoke-drawing.cjs",
-    "check": "node --check js/sim/engine.js && node --check js/sim/delta.js && node --check js/sim/indices.js && node --check js/sim/compare.js && node --check js/sim/timeline.js && node --check js/sim/view.js && node --check js/sim/app.js && node tools/smoke-drawing.cjs"
+    "check": "node --check js/sim/engine.js && node --check js/sim/delta.js && node --check js/sim/indices.js && node --check js/sim/compare.js && node --check js/sim/timeline.js && node --check js/sim/view.js && node --check js/sim/app.js && node tools/smoke-drawing.cjs",
+    "measure:chunking": "node tools/measure-chunking.cjs"
   },
   "dependencies": {
     "gifenc": "^1.0.3",
