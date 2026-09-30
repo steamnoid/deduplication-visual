@@ -196,6 +196,24 @@ Wniosek: symulator dobrze pokazuje **mechanizm** (przesunięcie granic, MaskS/Ma
 **Zastrzeżenie o skali danych, które trzeba powiedzieć wprost:** dane symulatora to powielone bloki 4096 B ze wspólnej biblioteki. Punkty cięcia wracają, więc rozkład rozmiarów jest znacznie bardziej skoncentrowany niż na prawdziwych plikach — w pliku 96 KB przy średniej 8 KB wychodzi 19 chunków, ale tylko 8 unikalnych rozmiarów. Histogram pokazuje **kierunek zmian** (normalizacja zacina rozkład), a nie jest benchmarkiem. To ostrzeżenie stoi też w interfejsie.
 
 
+### Near-exact: obcięty odcisk w indeksie (rozdział 8)
+
+Indeks może trzymać tylko początek odcisku, bo pełny 160-bitowy hash za dużo kosztuje w RAM. Symulator potrafi obciąć odcisk do dowolnej liczby bitów (`cfg.fpBits`) i — co ważniejsze — **rozróżnia dwa warianty**: z weryfikacją pełnego hasza przy trafieniu i bez niej. Wynik (`npm run measure:near-exact`, 30 dni, 24 pliki × 32 KB):
+
+| bity w indeksie | RAM | fałszywe trafienia | dedup ratio | restore |
+|---|---|---|---|---|
+| 64 (pełne) | 9168 B | 0 | 40,5 : 1 | ✓ wszystko bajt w bajt |
+| 8 | 4752 B | 0 | 40,5 : 1 | ✓ wszystko bajt w bajt |
+| 4 | 384 B | 0 | 40,5 : 1 | ✓ wszystko bajt w bajt |
+| 16, bez weryfikacji | 9144 B | 30 | 40,7 : 1 | ✓ |
+| 12, bez weryfikacji | 8688 B | 600 | 43,2 : 1 | ✗ 6 plików |
+| 8, bez weryfikacji | 4752 B | 5549 | 73,2 : 1 | ✗ 30 plików |
+| 4, bez weryfikacji | 384 B | 12 179 | **1159,7 : 1** | ✗ wszystkie 36 |
+
+Wniosek jest w drugiej połowie tabeli i jest **przeciwny do intuicji**: skrócenie odcisku samo w sobie nie kosztuje nic w ratio, bo pełny hash i tak trzeba mieć na dysku, żeby potwierdzić trafienie. Wariant z weryfikacją jest za darmo 24 razy mniejszy.
+
+Kosztem są **fałszywe trafienia**, a te widać dopiero przy restore. Bez weryfikacji metryka dedup *rośnie* — 1159 : 1 wygląda jak triumf — a pliki przestają się odtwarzać, bo system zapisał z cudzymi bajtami. Żadna metryka na pulpicie tego nie pokaże: jedyna rzecz, która to wyłapie, to porównanie odtworzonych bajtów z oryginałem. Dlatego restore w tym symulatorze zawsze sprawdza bajt po bajcie.
+
 ## Co w środku
 
 53 slajdy, 8 rozdziałów, 27 animacji:

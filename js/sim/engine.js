@@ -205,6 +205,20 @@
     return (h1 >>> 0) + ':' + (h2 >>> 0);
   }
 
+  /* Near-exact: indeks trzyma tylko początek odcisku, bo pełny 160-bitowy
+     hash za dużo kosztuje w RAM. Skrócony klucz zwiększa szansę kolizji
+     i — co gorsza — przestaje rozróżniać różne chunki, więc część
+     duplikatów przepada. */
+  function shorten(fp, bits) {
+    if (!bits || bits >= 64) return fp;
+    const p = fp.indexOf(':');
+    const a = parseInt(fp.slice(0, p), 10) >>> 0;
+    const b = parseInt(fp.slice(p + 1), 10) >>> 0;
+    const keep = Math.max(1, bits >> 1);
+    const mask = keep >= 32 ? 0xffffffff : (1 << keep) - 1;
+    return ((a & mask) >>> 0) + ':' + ((b & mask) >>> 0);
+  }
+
   function fpInt(fp, buckets) {
     // kubełek do wizualizacji indeksu (liczymy z tekstu odcisku)
     const p = fp.indexOf(':');
@@ -321,6 +335,8 @@
       this.fileQueue = ds.files.map(f => f.i);
       this.fileIdx = 0;
       this.day = 0;              // dzień osi czasu (oś 30 dni)
+      this.fpBits = cfg.fpBits || 0;   // 0 = pełny odcisk; >0 = near-exact
+      this.fpVerify = cfg.fpVerify !== false;   // czy sprawdzamy pełny hash przy trafieniu
       this.gcLog = [];           // przebiegi kompaktacji
       this.bodyLog = new Map();  // (plik, dzień) -> bajty tej wersji
       this.expiredKeys = new Set(); // backupy już wygaszone
@@ -339,7 +355,7 @@
         logical: 0, written: 0, chunks: 0, unique: 0, dups: 0,
         bytesScanned: 0, ms: 0, peakIndex: 0, bucketHits: 0,
         expiredBytes: 0, expiredChunks: 0, expiredRefs: 0, gcRuns: 0, gcRewritten: 0,
-        gcRead: 0, gcChunks: 0, backups: 0, falseNeg: 0, restoredFiles: 0, restoredBytes: 0,
+        gcRead: 0, gcChunks: 0, backups: 0, falseNeg: 0, falsePos: 0, restoredFiles: 0, restoredBytes: 0,
         deltaChunks: 0, deltaBytes: 0, deltaRaw: 0, deltaTries: 0, chainsBroken: 0,
         chainRewrites: 0, chainBytes: 0, chainMaxDepth: 0
       };
@@ -407,15 +423,26 @@
         const fp = fingerprint(ds.pool, ch.off + cs, len);
         const bucket = fpInt(fp, this.BUCKETS);
 
-        // 1) strategia indeksu odpowiada, ile kosztuje sprawdzenie i czy w ogóle widzi duplikat
-        const res = this.idx.lookup(fp);
+        // 1) strategia indeksu odpowiada, ile kosztuje sprawdzenie i czy w ogóle widzi duplikat.
+        // Klucz może być obcięty (near-exact) — wtedy indeks nie odróżnia
+        // chunków, które różnią się dopiero w końcowych bitach odcisku.
+        const idxKey = this.fpBits ? shorten(fp, this.fpBits) : fp;
+        const res = this.idx.lookup(idxKey);
         const known = this.dataIndex.get(fp);
         const onDisk = known && known.length > 0;
-
-        let cid, wrote = false;
+        let cid = null, wrote = false;
         if (res.hit && onDisk) {
-          // duplikat: podbijamy referencję ostatniej kopii na dysku
+          // pełny odcisk jest znany — to prawdziwy duplikat
           cid = known[known.length - 1];
+        } else if (res.hit && !this.fpVerify && this.fpBits && res.e && res.e.id != null) {
+          // near-exact bez weryfikacji: ufamy samemu skróconemu odciskowi.
+          // Kolizja skrótu oznacza fałszywe trafienie, czyli plik zapisujemy
+          // z cudzymi bajtami i restore go nie odtworzy.
+          cid = res.e.id;
+          this.st.falsePos++;
+        }
+
+        if (cid != null) {
           this._grow(this.chunkRefs, cid);
           this.chunkRefs[cid]++;
           st.dups++;
@@ -925,7 +952,7 @@
 
   /* ---------- eksport ---------- */
   NS.sim = {
-    IdList, TYPES, GEAR, fastCDCMasks, fingerprint, fpInt, Chunker, Run, Container,
+    IdList, TYPES, GEAR, fastCDCMasks, fingerprint, shorten, fpInt, Chunker, Run, Container,
     buildDataset, makePool, fileName
   };
 

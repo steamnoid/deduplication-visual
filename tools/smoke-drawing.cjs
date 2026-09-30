@@ -101,6 +101,32 @@ sprawdz('zdarzenia systemowe są w śladzie', () => {
   console.log('    oznaczeń zdarzeń systemowych w miesiącu: ' + z);
 });
 
+/* 30 dni z danym obcięciem odcisku i weryfikacją */
+function miesiac(fpBits, fpVerify) {
+  const ds = SIM.sim.buildDataset({
+    type: 'code', files: 10, fileKB: 32, redundancy: 0.55,
+    containerKB: 256, retention: 7, days: 20, seed: 12345
+  });
+  const run = new SIM.sim.Run(ds, {
+    bits: 10, fastCDC: true, indexKind: 'hash', segChunks: 16,
+    containerKB: 256, keepBytes: true, fpBits, fpVerify
+  });
+  for (let d = 0; d < 20; d++) {
+    run.day = d; run.fileIdx = 0; run.done = false;
+    run.fileQueue = ds.files
+      .filter(f => !f.dead && f.born !== undefined && f.born <= d)
+      .map(f => ({ fi: f.i, v: f.version || 0 }));
+    while (!run.done) run.step(1 << 18);
+  }
+  let zle = 0;
+  for (let d = 15; d < 20; d++) for (let f = 0; f < 6; f++) {
+    const r = run.restore(d, f);
+    if (r && !r.verified) zle++;
+  }
+  return { ram: run.indexBytes, fp: run.st.falsePos, ratio: run.st.logical / run.st.written, zle };
+}
+
+console.log('near-exact:');
 console.log('normalized chunking:');
 sprawdz('maski liczone względem średniej', () => {
   for (const bits of [10, 12, 13, 14]) {
@@ -148,6 +174,28 @@ sprawdz('NC przybliża średnią do wybranej i zwęża rozkład', () => {
     console.log('    ' + (1 << bits) + ' B: średnia ' + a.avg.toFixed(0) + ' → ' + b.avg.toFixed(0) +
       ', rozstęp p05–p95 ' + a.rozpiętość + ' → ' + b.rozpiętość);
   }
+});
+
+console.log('near-exact:');
+sprawdz('skrócenie odcisku nie psuje ratio, gdy sprawdzamy pełny hash', () => {
+  const pelny = miesiac(0, true), krotki = miesiac(4, true);
+  if (krotki.ram >= pelny.ram) throw new Error('krótszy odcisk nie zmniejszył indeksu');
+  if (krotki.fp !== 0) throw new Error('pełna weryfikacja dała fałszywe trafienia: ' + krotki.fp);
+  if (Math.abs(krotki.ratio - pelny.ratio) > 0.001) {
+    throw new Error('ratio zmieniło się: ' + pelny.ratio.toFixed(2) + ' → ' + krotki.ratio.toFixed(2));
+  }
+  if (krotki.zle !== 0) throw new Error('restore uszkodzony mimo weryfikacji');
+  console.log('    indeks ' + pelny.ram + ' B → ' + krotki.ram + ' B, ratio bez zmian, 0 fałszywych trafień');
+});
+sprawdz('bez weryfikacji skrót psuje dane, choć ratio wygląda lepiej', () => {
+  const zle = miesiac(8, false);
+  if (zle.fp === 0) throw new Error('nie było fałszywych trafień');
+  if (zle.zle === 0) throw new Error('restore nie wykrył uszkodzenia');
+  if (!(zle.ratio > miesiac(8, true).ratio)) {
+    throw new Error('oczekiwaliśmy zawyżonego ratio, jest ' + zle.ratio.toFixed(2));
+  }
+  console.log('    ' + zle.fp + ' fałszywych trafień, ratio ' + zle.ratio.toFixed(1) +
+    ':1 (wygląda lepiej), ale ' + zle.zle + ' plików nie odtwarza się poprawnie');
 });
 
 console.log('tipy:');
