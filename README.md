@@ -108,7 +108,15 @@ Dzień 1 i dzień 30 wyglądają zupełnie inaczej i to jest sedno: pierwszego d
 
 `npm run check` dodatkowo robi `node --check` na wszystkich modułach symulatora.
 
-Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni, **S5** kompresja delta, **S6** odtwarzanie przebiegu dnia (zrobione), **S7** warstwa wyjaśnień.
+### Warstwa wyjaśnień
+
+Kursor nad słupkiem wykresu 30 dni pokazuje tip z liczbami tego dnia i **jednym zdaniem, co ten dzień znaczył** — pierwszy pełny backup, prawie wszystko duplikat, delta skróciła większość nowych chunków, dziury przekroczyły próg. Zdania są pisane z danych (`view.cozSieDzialo`), a nie z szablonu: gdy model się zmieni, zmienią się razem z nim.
+
+Kursor nad pasem zdarzeń przebiegu dnia pokazuje konkretny chunk: nowy na dysk, duplikat pominięty czy delta, jego rozmiar, ile z tego realnie trafiło na dysk oraz plik i pozycję, z której pochodzi.
+
+`npm test` sprawdza też, że rysowanie i tipy mieszczą się w panelu od 320 do 1400 px — przy 1366×768 szerokość arkusza to ok. 900 px i każda ramka musi w niej zostać.
+
+Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni, **S5** kompresja delta, **S6** odtwarzanie przebiegu dnia, **S7** warstwa wyjaśnień (zrobione).
 
 ## Co w środku
 

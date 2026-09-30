@@ -26,7 +26,9 @@ function stubCtx() {
     beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() { st.arcs++; },
     arcTo() {}, rect() {}, clip() {}, save() {}, restore() {},
     fill() { st.fills = (st.fills || 0) + 1; }, stroke() { st.stroke++; }, setLineDash() {},
-    fillText(s, x, y) { st.fillText++; st.texts.push(String(s)); }
+    fillText(s, x, y) { st.fillText++; st.texts.push(String(s)); },
+    // przybliżona szerokość: dość, żeby tipy miały sensowny rozmiar
+    measureText(s) { return String(s).length * 6.2; },
   };
 }
 
@@ -99,12 +101,102 @@ sprawdz('zdarzenia systemowe są w śladzie', () => {
   console.log('    oznaczeń zdarzeń systemowych w miesiącu: ' + z);
 });
 
+console.log('tipy:');
+sprawdz('tip dnia pokazuje liczby i zdanie', () => {
+  ctx._st.texts.length = 0;
+  const L = view.drawTimeline(ctx, 900, 250, r, 29, 14);
+  const t = ctx._st.texts.join(' | ');
+  if (t.indexOf('dzień 15') < 0) throw new Error('brak dnia w tipie: ' + t.slice(0, 120));
+  if (t.indexOf('Na dysk') < 0 && t.indexOf('zapis') < 0) throw new Error('brak opisu zapisu');
+  void L;
+});
+sprawdz('każdy dzień ma opis w tipie', () => {
+  // tip rysuje się dla dnia pod kursorem, więc hover musi różnić się od wybranego
+  for (let i = 0; i < r.series.length; i++) {
+    ctx._st.texts.length = 0;
+    view.drawTimeline(ctx, 900, 250, r, (i + 1) % r.series.length, i);
+    const t = ctx._st.texts.join(' | ');
+    if (t.indexOf('kontenery') < 0) throw new Error('dzień ' + (i + 1) + ': brak opisu');
+    if (t.indexOf('dzień ' + (i + 1)) < 0) throw new Error('dzień ' + (i + 1) + ': zły nagłówek tipu');
+  }
+});
+sprawdz('tip znika, gdy dzień jest już wybrany', () => {
+  ctx._st.texts.length = 0;
+  view.drawTimeline(ctx, 900, 250, r, 12, 12);
+  const t = ctx._st.texts.join(' | ');
+  if (t.indexOf('kontenery') >= 0) throw new Error('tip rysuje się dwa razy dla tego samego dnia');
+});
+sprawdz('tip chunka pokazuje rodzaj i rozmiary', () => {
+  const day = r.series[0];
+  const iNowy = day.trace.findIndex(e => e.kind === 'new');
+  const iDup = day.trace.findIndex(e => e.kind === 'dup');
+  if (iNowy < 0 || iDup < 0) throw new Error('brak zdarzeń nowy/duplikat');
+  ctx._st.texts.length = 0;
+  view.tipChunk(ctx, 900, 200, day, iNowy, 300);
+  const t = ctx._st.texts.join(' | ');
+  if (t.indexOf('nowy chunk') < 0) throw new Error('brak rodzaju: ' + t);
+  if (t.indexOf('plik') < 0) throw new Error('brak pliku: ' + t);
+  ctx._st.texts.length = 0;
+  view.tipChunk(ctx, 900, 200, day, iDup, 300);
+  const t2 = ctx._st.texts.join(' | ');
+  if (t2.indexOf('na dysk 0 B') < 0) throw new Error('duplikat powinien mieć zero zapisu: ' + t2);
+});
+sprawdz('tip poza zakresem nic nie rysuje', () => {
+  ctx._st.texts.length = 0;
+  view.tipChunk(ctx, 900, 200, r.series[0], 99999, 300);
+  if (ctx._st.texts.length) throw new Error('narysował tip dla nieistniejącego zdarzenia');
+});
+sprawdz('pozycja tipu mieści się w szerokości', () => {
+  ctx._st.rects.length = 0;
+  ctx._st.fills = 0;
+  view.tipChunk(ctx, 300, 200, r.series[0], 0, 5);
+  const bad = ctx._st.rects.some(x => x[0] < 0 || x[0] + x[2] > 300);
+  if (bad) throw new Error('tip wychodzi poza kanwę: ' + JSON.stringify(ctx._st.rects));
+});
+
 console.log('legenda i etykiety:');
-const teksty = ctx._st.texts.join(' | ');
-['nowy chunk na dysk', 'duplikat pominięty', 'delta', 'bajty wchodzące', 'zapisane na dysk']
-  .forEach(s => sprawdz('napis: ' + s, () => {
-    if (teksty.indexOf(s) < 0) throw new Error('nie ma etykiety');
-  }));
+sprawdz('legenda przebiegu dnia', () => {
+  ctx._st.texts.length = 0;
+  view.drawDay(ctx, 900, 200, r.series[0], 1);
+  const t = ctx._st.texts.join(' | ');
+  ['nowy chunk na dysk', 'duplikat pominięty', 'delta', 'bajty wchodzące', 'zapisane na dysk']
+    .forEach(s => { if (t.indexOf(s) < 0) throw new Error('brak etykiety: ' + s); });
+});
+sprawdz('legenda wykresu 30 dni', () => {
+  ctx._st.texts.length = 0;
+  view.drawTimeline(ctx, 900, 250, r, 0, null);
+  const t = ctx._st.texts.join(' | ');
+  if (t.indexOf('zapisane bajty / dzień') < 0) throw new Error('brak legendy');
+  if (t.indexOf('pierwszy pełny backup') < 0) throw new Error('brak opisu fioletowego słupka');
+  if (t.indexOf('wygaśnięte kopie') < 0) throw new Error('brak opisu paska wygaśnięć');
+});
+
+console.log('szerokości (okno 1366×768 daje wąski panel):');
+[320, 500, 700, 900, 1400].forEach(W => {
+  sprawdz('wykres 30 dni przy ' + W + ' px', () => {
+    const L = view.drawTimeline(ctx, W, 250, r, 10, 20);
+    if (L.pw <= 0 || L.bw <= 0) throw new Error('zerowa szerokość: ' + JSON.stringify(L));
+    if (L.px + L.pw > W) throw new Error('wykres wychodzi poza kanwę');
+  });
+  sprawdz('przebieg dnia przy ' + W + ' px', () => {
+    const out = view.drawDay(ctx, W, 200, r.series[10], 0.5);
+    if (!out) throw new Error('brak odczytu');
+  });
+  sprawdz('tip chunka przy ' + W + ' px', () => {
+    ctx._st.rects.length = 0;
+    view.tipChunk(ctx, W, 200, r.series[0], 3, W / 2);
+    const bad = ctx._st.rects.some(x => x[0] < -0.5 || x[0] + x[2] > W + 0.5);
+    if (bad) throw new Error('wychodzi poza kanwę: ' + JSON.stringify(ctx._st.rects));
+  });
+});
+sprawdz('tip dnia mieści się w wąskim panelu', () => {
+  for (const W of [320, 500, 700]) {
+    ctx._st.rects.length = 0;
+    view.drawTimeline(ctx, W, 250, r, 0, 15);
+    const bad = ctx._st.rects.some(x => x[0] < -0.5 || x[0] + x[2] > W + 0.5);
+    if (bad) throw new Error('W=' + W + ': ' + JSON.stringify(ctx._st.rects));
+  }
+});
 
 console.log('\nid w app.js a w simulator.html:');
 const fs = require('fs');

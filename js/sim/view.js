@@ -394,7 +394,7 @@
   /* Trzy serie na jednym obrazie, bo to one się ze sobą biją:
      zapisane bajty (słupki), dziury po retencji (linia) i momenty,
      w których GC zabrał się do sprzątania (znaczniki). */
-  function drawTimeline(ctx, W, H, res, sel) {
+  function drawTimeline(ctx, W, H, res, sel, hover) {
     const S = res.series;
     ctx.fillStyle = C.bg;
     ctx.fillRect(0, 0, W, H);
@@ -469,6 +469,16 @@
     text(ctx, 'pasek: GC', px + 324, 12, { size: 10, color: C.bad });
     text(ctx, 'słupek fioletowy: pierwszy pełny backup', px + 388, 12, { size: 10, color: C.violet });
 
+    // dzień pod kursorem dostaje własny kontur
+    if (hover != null && hover !== sel && S[hover]) {
+      const hx = px + hover * bw;
+      ctx.strokeStyle = alpha(C.info, 0.5);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      ctx.strokeRect(Math.round(hx) + 1.5, py - 6, Math.max(1, bw - 3), ph + 6);
+      ctx.setLineDash([]);
+    }
+
     // podświetlenie wybranego dnia: pasek pod osią i opis pod nim
     const d = S[sel];
     const selX = px + sel * bw;
@@ -480,6 +490,7 @@
       const lx = Math.min(W - 8, Math.max(80, selX + bw / 2));
       text(ctx, label, lx, H - 9, { size: 11, color: C.info, align: 'center', weight: 600 });
     }
+    if (hover != null && S[hover] && hover !== sel) tipDay(ctx, W, H, S[hover], px + hover * bw, pw, res);
     return { px, pw, bw, n: S.length, py, ph };
   }
 
@@ -608,12 +619,81 @@
     ctx.setLineDash([]);
   }
 
+
+  /* Tip pod kursorem. Tekst pisany jest z liczb dnia, a nie z szablonu:
+     jeśli model się zmieni, zdanie zmieni się razem z nim. */
+  function tipDay(ctx, W, H, d, x0, pw, res) {
+    const lines = [
+      'dzień ' + d.day + ' z ' + res.series.length,
+      'wejście ' + fmtB(d.logical) + ' · zapis ' + fmtB(d.written) +
+        (d.ratio ? ' · ' + d.ratio.toFixed(1) + ':1' : ''),
+      'kontenery ' + d.containers + ' · dziury ' + Math.round(d.holesRatio * 100) + '%' +
+        ' · indeks ' + fmtB(d.indexRam)
+    ];
+    if (d.deltaChunks) lines.push('delt zapisano: ' + fmt(d.deltaChunks));
+    if (d.expired) lines.push('wygasło ' + fmtB(d.expired));
+    if (d.gc) lines.push('GC przepisał ' + fmtB(d.gc));
+    lines.push(cozSieDzialo(d));
+
+    ctx.font = '500 11px -apple-system, system-ui, sans-serif';
+    let wmax = 0;
+    for (const l of lines) wmax = Math.max(wmax, ctx.measureText(l).width);
+    const bw = Math.min(W - 16, wmax + 22);
+    const bh = lines.length * 15 + 14;
+    let bx = x0 + bw / 2 - bw / 2;
+    bx = Math.max(6, Math.min(W - bw - 6, bx));
+    let by = H - bh - 26;
+    if (by < 4) by = 4;
+
+    box(ctx, bx, by, bw, bh, { r: 6, fill: 'rgba(10,16,28,.97)', stroke: C.line });
+    lines.forEach((l, i) => {
+      const y = by + 14 + i * 15;
+      text(ctx, l, bx + 11, y, {
+        size: 11,
+        color: i === 0 ? C.text : i === lines.length - 1 ? C.info : C.muted,
+        weight: i === 0 ? 600 : 500
+      });
+    });
+  }
+
+  /* Jedno zdanie o tym, co ten dzień znaczył. */
+  function cozSieDzialo(d) {
+    if (d.day === 1) return 'pierwszy pełny backup: na dysk trafia cały zbiór';
+    const c = d.chunks ? d.dups / d.chunks : 0;
+    if (d.written === 0) return 'nic nowego nie zapisał się na dysk';
+    if (c > 0.8) return 'prawie wszystko było duplikatem — indeks zrobił robotę';
+    if (d.deltaChunks && d.deltaChunks * 3 > d.chunks) return 'pliki zmienione: delta skróciła większość nowych chunków';
+    if (d.gc) return 'dziury przekroczyły próg, więc system sprzątał';
+    if (d.expired) return 'głównie wygaśnięte kopie i drobne zmiany w plikach';
+    return 'zwykły dzień: niewiele się zmieniło, niewiele zapisano';
+  }
+
+  /* Tip nad przebiegiem dnia: konkretny chunk pod kursorem. */
+  function tipChunk(ctx, W, H, day, i, xAt) {
+    const e = day.trace[i];
+    if (!e) return;
+    const kind = e.kind === 'new' ? 'nowy chunk na dysk'
+      : e.kind === 'delta' ? 'delta (krótszy zapis)' : 'duplikat pominięty';
+    const lines = [kind, 'rozmiar ' + fmtB(e.len) +
+      (e.kind !== 'dup' ? ' · na dysk ' + fmtB(e.rec || e.len) : ' · na dysk 0 B'),
+      'plik ' + (e.file + 1) + ', pozycja ' + fmtB(e.at)];
+    ctx.font = '500 11px -apple-system, system-ui, sans-serif';
+    let wmax = 0;
+    for (const l of lines) wmax = Math.max(wmax, ctx.measureText(l).width);
+    const bw = wmax + 22, bh = lines.length * 15 + 12;
+    const x = Math.max(6, Math.min(W - bw - 6, (xAt || 0) - bw / 2));
+    box(ctx, x, 4, bw, bh, { r: 6, fill: 'rgba(10,16,28,.97)', stroke: C.line });
+    lines.forEach((l, k) => text(ctx, l, x + 11, 15 + k * 15, {
+      size: 11, color: k === 0 ? (e.kind === 'new' ? C.new : e.kind === 'delta' ? C.violet : C.dupe) : C.muted
+    }));
+  }
+
   function niceMax(v) {
     const p = Math.pow(10, Math.floor(Math.log10(v)));
     const n = v / p;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
   }
 
-  NS.view = { draw, drawTimeline, drawDay, C, rr, box, text, alpha, bar, spark, fmtB, fmt };
+  NS.view = { draw, drawTimeline, drawDay, tipChunk, C, rr, box, text, alpha, bar, spark, fmtB, fmt };
 
 })(window.SIM = window.SIM || {});

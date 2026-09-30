@@ -10,7 +10,7 @@
       delta: 'off', chainGuard: 'expand'
     },
     run: null, playing: true, dirty: true,
-    tl: { res: null, sel: 0, layout: null, busy: false, t: 1, playing: false, raf: 0 }
+    tl: { res: null, sel: 0, layout: null, busy: false, t: 1, playing: false, raf: 0, hover: null, hoverDay: null }
   };
 
   const el = {};
@@ -283,7 +283,7 @@
     cv.width = W * dpr; cv.height = 250 * dpr;
     const ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    state.tl.layout = SIM.view.drawTimeline(ctx, W, 250, res, state.tl.sel);
+    state.tl.layout = SIM.view.drawTimeline(ctx, W, 250, res, state.tl.sel, state.tl.hover);
 
     const gcBtn = $('gcBtn');
     if (gcBtn) {
@@ -321,6 +321,20 @@
         renderTimeline();
       }
     };
+
+    cv.onmousemove = ev => {
+      const r = cv.getBoundingClientRect();
+      const L = state.tl.layout;
+      if (!L) return;
+      const i = Math.floor((ev.clientX - r.left - L.px) / L.bw);
+      const idx = (i >= 0 && i < L.n) ? i : null;
+      if (idx === state.tl.hover) return;
+      state.tl.hover = idx;
+      redrawTimeline();
+    };
+    cv.onmouseleave = () => { state.tl.hover = null; redrawTimeline(); };
+
+    bindDayHover(res);
 
     const pos = $('dayPos');
     pos.value = Math.round(state.tl.t * 1000);
@@ -403,6 +417,11 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const day = res.series[dayIdx];
     const out = SIM.view.drawDay(ctx, W, H, day, state.tl.t);
+    if (state.tl.hoverDay != null && out) {
+      const n = day.trace.length;
+      const x = 12 + (state.tl.hoverDay / n) * (W - 24);
+      SIM.view.tipChunk(ctx, W, H, day, state.tl.hoverDay, x);
+    }
     const el = $('dayRead');
     if (el && out) {
       el.textContent = Math.round(out.pct * 100) + '% · ' + out.ratio.toFixed(1) + ':1';
@@ -426,6 +445,35 @@
       state.tl.raf = requestAnimationFrame(step);
     };
     state.tl.raf = requestAnimationFrame(step);
+  }
+
+  /* Przerysowanie bez przebudowy HTML — hover nie może przerabiać panelu. */
+  function redrawTimeline() {
+    const res = state.tl.res;
+    if (!res) return;
+    const cv = $('tlCv');
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    state.tl.layout = SIM.view.drawTimeline(ctx, cv.width / dpr, 250, res, state.tl.sel, state.tl.hover);
+  }
+
+  /* Kursor nad pasem zdarzeń: pokazujemy konkretny chunk, nie tylko dzień. */
+  function bindDayHover(res) {
+    const cv = $('dayCv');
+    if (!cv) return;
+    cv.onmousemove = ev => {
+      const r = cv.getBoundingClientRect();
+      const day = res.series[state.tl.sel];
+      if (!day || !day.trace.length) return;
+      const n = day.trace.length;
+      const i = Math.floor((ev.clientX - r.left - 12) / ((cv.clientWidth - 24) / n));
+      if (i < 0 || i >= n) { state.tl.hoverDay = null; drawDayCanvas(res, state.tl.sel); return; }
+      state.tl.hoverDay = i;
+      drawDayCanvas(res, state.tl.sel);
+    };
+    cv.onmouseleave = () => { state.tl.hoverDay = null; drawDayCanvas(res, state.tl.sel); };
   }
 
   function stopDay() {
