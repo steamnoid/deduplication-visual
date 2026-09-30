@@ -47,12 +47,22 @@
     constructor() { this.reset(); }
     reset() {
       this.reps = new Map();          // repFp -> fileId
+      // RAM liczymy z plików, nie z różnych reprezentantów: dwa pliki
+      // o tym samym pierwszym chunku to nadal dwa wpisy w tablicy.
+      // Gdyby liczyć różne odciski, pięć kopii jednego pliku wyglądałoby
+      // jak jeden wpis i cała teza Extreme Binninga by się rozpadła.
+      this.files = new Set();
       this.fileIndex = new Map();     // fileId -> Set(fp)  (na dysku)
       this.curFile = -1;
       this.curEmpty = true;           // czy żaden chunk tego pliku jeszcze nie wszedł
       this.st = { ram: 0, disk: 0, seq: 0, entries: 0, probes: 0, falseNeg: 0, resolved: 0 };
     }
-    beginFile(fileId) { this.curFile = fileId; this.curEmpty = true; this.linked = null; }
+    beginFile(fileId) {
+      this.curFile = fileId;
+      this.curEmpty = true;
+      this.linked = null;
+      this.files.add(fileId);
+    }
     lookup(fp) {
       this.st.probes++;
       this.st.ram++;
@@ -88,7 +98,8 @@
       if (!s) { s = new Set(); this.fileIndex.set(fileId, s); }
       s.add(fp);
     }
-    get ramBytes() { return this.reps.size * ENTRY; }
+    get ramBytes() { return this.files.size * ENTRY; }
+    get entries() { return this.files.size; }
     label() { return 'Extreme Binning'; }
     note() { return 'jeden wpis na plik; podobny plik = jeden odczyt indeksu z dysku'; }
   }

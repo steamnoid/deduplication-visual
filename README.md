@@ -60,13 +60,31 @@ Co widać na ekranie: pasek bajtów pliku z głowicą skanowania, lupę na 96 ba
 
 Czym sterujesz: typ plików (obrazy VM / kod / logi / zrzuty bazy), liczba plików, suwak redundancji, liczba bitów maski (rozmiar chunka), wielkość kontenera, ile plików wygasa przy retencji, prędkość skanu. Przycisk **⌫ Wygasz najstarsze pliki** zmniejsza referencje do chunków i zostawia dziury w kontenerach — czyli pokazuje, skąd bierze się potrzeba garbage collection.
 
-**Trzy strategie indeksu (rozdział 4), wszystkie napisane jako symulacja odpytywania:**
+### Trzy strategie indeksu
 
-| strategia | model | typowy wynik na 1,9 MB zbioru |
-|---|---|---|
-| pełna tablica hash | jeden wpis na chunk, jeden losowy odczyt RAM na chunk | 610 KB RAM, 0 seeków, 0 pominiętych duplikatów |
-| Extreme Binning | jeden wpis RAM na plik (minimalny fingerprint); trafienie = jeden seek i odczyt indeksu podobnego pliku | 456 B RAM, 21 seeków, 416 pominiętych duplikatów |
-| SiLo | reprezentant na segment pliku; trafienie = prefetch całego segmentu (1 seek + seria odczytów sekwencyjnych) | 39 KB RAM, 1721 seeków, 351 pominiętych duplikatów |
+Wszystkie trzy napisane jako symulacja odpytywania (`js/sim/indices.js`), licząc trzy rodzaje kosztu: losowy odczyt RAM, seek na dysk i odczyt sekwencyjny.
+
+**Wspólny zbiór: 40 plików po 48 KB, redundancja 55%** — to, co widać po naciśnięciu „Porównaj strategie":
+
+| strategia | model | indeks w RAM | seeki | odczyty sekwencyjne | dedup ratio |
+|---|---|---|---|---|---|
+| pełna tablica hash | jeden wpis na chunk, jeden losowy odczyt RAM na chunk | 623 KB | 0 | 0 | 1,76 : 1 |
+| Extreme Binning | jeden wpis na plik: 24 B (16 B odcisk + 8 B lokalizacja) | **960 B** | 21 | 23 352 | 1,76 : 1 |
+| SiLo | reprezentant na segment pliku; trafienie = prefetch całego segmentu | 39 KB | 1197 | 19 152 | 1,76 : 1 |
+
+Na tym zbiorze wszystkie trzy znajdują **wszystkie** duplikaty, bo pliki są kopiami siebie, więc każdy duplikat ma reprezentanta. Różnica jest czysto ekonomiczna: Extreme Binning daje ten sam ratio przy 1/650 pamięci indeksu, kosztem odczytów z dysku.
+
+**Ten sam symulator na 30 dniach, gdzie pliki się zmieniają** — i tu Extreme Binning właśnie płaci:
+
+| strategia | indeks w RAM | seeki | odczyty sekwencyjne | pominięte duplikaty | dedup ratio | write amplif. |
+|---|---|---|---|---|---|---|
+| pełna tablica hash | 72 KB | 0 | 0 | 0 | 14,6 : 1 | 2,05× |
+| Extreme Binning | **960 B** | 1138 | 72 987 | **2460** | 4,7 : 1 | 2,73× |
+| SiLo | 7,3 KB | 3283 | 52 486 | 0 | 10,4 : 1 | 2,13× |
+
+Powód: reprezentant EB to **pierwszy** chunk pliku. Gdy plik zmieni się w środku, duplikat powstaje w miejscu, które nie jest pierwszym chunkem żadnego pliku — nikt go nie reprezentuje, więc indeks o nim nie wie. Im dłużej żyje indeks i im więcej plików się zmienia, tym więcej takich dziur.
+
+**Błąd, który przy okazji znalazłem:** Extreme Binning liczył RAM z liczby *różnych reprezentantów*, a nie plików, więc pięć kopii jednego pliku wyglądało jak jeden wpis. Indeks schodził do 456 B zamiast 960 B, a w tabeli padało „416 pominiętych duplikatów", co było artefaktem tego błędu. Teraz RAM liczy się z plików (`ENTRY = 24`), zgodnie z algorytmem.
 
 Przycisk **⇄ Porównaj strategie na tym zbiorze** liczy chunking raz, a potem przepuszcza te same granice przez wszystkie strategie — dzięki temu porównujesz indeks, a nie chunker. Wynik wychodzi w ~50 ms dla 47 tys. chunków.
 
@@ -86,9 +104,9 @@ Co widać w liczbach (24 pliki × 32 KB, chunki 1 KB, retencja 7 dni):
 
 | typ plików | oszczędność | write amplification | przebiegi GC |
 |---|---|---|---|
-| kod źródłowy | 12,3 : 1 | 1,17× | 2 |
-| obrazy VM | 15,1 : 1 | 1,10× | 1 |
-| logi | 4,7 : 1 | **1,52×** | 4 |
+| kod źródłowy | 11,6 : 1 | 2,02× | 2 |
+| obrazy VM | 14,6 : 1 | 2,14× | 2 |
+| logi | 4,8 : 1 | **2,41×** | 4 |
 
 Logi wygrywają w kategorii „najwięcej przepisuje”: dużo się zmieniają, więc retencja ciągle uwalnia chunki, którym zostaje ostatnia referencja, i GC ma co przenosić. Wykres pokazuje ząb — dziury rosną, GC je zabiera, rosną od nowa.
 
@@ -177,21 +195,6 @@ Wniosek: symulator dobrze pokazuje **mechanizm** (przesunięcie granic, MaskS/Ma
 
 **Zastrzeżenie o skali danych, które trzeba powiedzieć wprost:** dane symulatora to powielone bloki 4096 B ze wspólnej biblioteki. Punkty cięcia wracają, więc rozkład rozmiarów jest znacznie bardziej skoncentrowany niż na prawdziwych plikach — w pliku 96 KB przy średniej 8 KB wychodzi 19 chunków, ale tylko 8 unikalnych rozmiarów. Histogram pokazuje **kierunek zmian** (normalizacja zacina rozkład), a nie jest benchmarkiem. To ostrzeżenie stoi też w interfejsie.
 
-### Znormalizowane chunking (FastCDC, rozdział 3)
-
-Chunker ma teraz dwie maski tak, jak w artykule (Xia i in., USENIX ATC 2016): **MaskS przed progiem średniej** (trudniej ciąć, więc chunki są dłuższe) i **MaskL po progu** (łatwiej ciąć, więc ogony rozkładu się skracają). Maska domyślna **MaskA** to wariant bez normalizacji.
-
-Maski są liczone względem wybranej średniej (`s = bits+2`, `a = bits`, `l = bits−2`), więc dla konfiguracji 8 KB z artykułu wychodzi dokładnie **MaskS 15 / MaskA 13 / MaskL 11 bitów** — te same wartości, które podaje Algorithm 1. Zmierzone na naszych danych:
-
-| średnia | bez NC | z NC |
-|---|---|---|
-| 1 KB | średnia 1092 B, rozstęp p05–p95 3073 B | średnia 954 B, rozstęp 1266 B |
-| 4 KB | średnia 2809 B, rozstęp 7087 B | średnia 2731 B, rozstęp 3586 B |
-| 8 KB | średnia 5174 B, rozstęp 13336 B | średnia 8937 B, rozstęp 8509 B |
-
-**Zastrzeżenie o skali, które trzeba powiedzieć wprost:** dane symulatora to powielone bloki 4096 B ze wspólnej biblioteki. Punkty cięcia wracają, więc rozkład rozmiarów jest znacznie bardziej skoncentrowany niż na prawdziwych plikach — w pliku 96 KB przy średniej 8 KB wychodzi 19 chunków, ale tylko 8 unikalnych rozmiarów. Histogram pokazuje **kierunek zmian** (normalizacja zacina rozkład), a nie jest benchmarkiem. To ostrzeżenie stoi też w interfejsie.
-
-Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni, **S5** kompresja delta, **S6** odtwarzanie przebiegu dnia, **S7** warstwa wyjaśnień, **S8** znormalizowane chunking (zrobione).
 
 ## Co w środku
 
