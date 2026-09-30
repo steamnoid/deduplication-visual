@@ -3,3 +3,4 @@ node_modules/
 posters/_sheet.png
 .DS_Store
 *.log
+.playwright-mcp/
