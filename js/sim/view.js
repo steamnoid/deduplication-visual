@@ -79,6 +79,9 @@
     ctx.restore();
     void val;
   }
+  /* tysiące z odstępem — w Polishie to przecinek */
+  function fmt(n) { return Math.round(n).toLocaleString('pl-PL'); }
+
   function fmtB(n) {
     if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
     if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
@@ -480,12 +483,137 @@
     return { px, pw, bw, n: S.length, py, ph };
   }
 
+
+  /* ---------- przebieg jednego dnia ---------- */
+
+  /* Dzień to strumień chunków: każdy to albo zapis na dysk, albo
+     duplikat pominięty, albo delta. Rysujemy to jako pas zdarzeń
+     i dwie krzywe narastające — wejście i zapis — z głową odtwarzającą
+     przebieg. Prawa strona wiersza pokazuje, ile tego dnia naprawdę
+     zapisało się na dysk. */
+  function drawDay(ctx, W, H, day, t) {
+    const tr = day.trace;
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+    if (!tr.length) return null;
+
+    const padL = 12, padR = 12;
+    const pw = W - padL - padR;
+    const yStrip = 30, hStrip = 58;
+    const yCurve = 108, hCurve = H - yCurve - 30;
+
+    // ile bajtów w sumie i ile na dysk
+    let totalIn = 0, totalWrite = 0, maxLen = 1;
+    for (const e of tr) {
+      totalIn += e.len;
+      if (e.kind !== 'dup') totalWrite += e.rec || e.len;
+      if (e.len > maxLen) maxLen = e.len;
+    }
+
+    // krzywe narastające liczymy raz, potem tylko ryszymy
+    const cumIn = new Float64Array(tr.length);
+    const cumW = new Float64Array(tr.length);
+    let a = 0, b = 0;
+    for (let i = 0; i < tr.length; i++) {
+      a += tr[i].len; cumIn[i] = a;
+      if (tr[i].kind !== 'dup') b += tr[i].rec || tr[i].len;
+      cumW[i] = b;
+    }
+    const scale = Math.max(1, totalIn);
+    const head = Math.max(0, Math.min(tr.length, Math.round(t * tr.length)));
+
+    // siatka pod krzywymi
+    for (let i = 0; i <= 2; i++) {
+      const y = yCurve + hCurve - (hCurve * i) / 2;
+      ctx.strokeStyle = C.line;
+      ctx.beginPath(); ctx.moveTo(padL, Math.round(y) + .5); ctx.lineTo(padL + pw, Math.round(y) + .5); ctx.stroke();
+    }
+
+    // pas zdarzeń: wysokość to realny rozmiar chunka
+    const w = pw / tr.length;
+    for (let i = 0; i < head; i++) {
+      const e = tr[i];
+      const h = Math.max(1.5, (e.len / maxLen) * hStrip);
+      const x = padL + i * w;
+      const col = e.kind === 'new' ? C.new : e.kind === 'delta' ? C.violet : C.dupe;
+      ctx.fillStyle = col;
+      ctx.fillRect(x, yStrip + hStrip - h, Math.max(0.7, w - (w > 3 ? 0.6 : 0)), h);
+    }
+    // jeszcze nieodtworzone: kontur
+    ctx.fillStyle = alpha(C.dim, 0.13);
+    ctx.fillRect(padL + head * w, yStrip, pw - head * w, hStrip);
+
+    // krzywe wejścia i zapisu
+    line(ctx, cumIn, padL, yCurve, hCurve, scale, C.muted, 1.2, [3, 3], pw);
+    line(ctx, cumW, padL, yCurve, hCurve, scale, C.save, 1.8, null, pw);
+
+    // zdarzenia systemowe tego dnia
+    for (const p of day.phases || []) {
+      if (p.kind === 'scan') continue;
+      const x = padL + (p.at / tr.length) * pw;
+      ctx.strokeStyle = p.kind === 'gc' ? C.bad : C.ref;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath(); ctx.moveTo(x, yStrip - 6); ctx.lineTo(x, yCurve + hCurve); ctx.stroke();
+      ctx.setLineDash([]);
+      text(ctx, p.kind === 'gc' ? 'GC' : 'wygaśnięcia', x + 3, yStrip - 10,
+        { size: 9, color: p.kind === 'gc' ? C.bad : C.ref });
+    }
+
+    // głowa odtwarzania
+    const hx = padL + head * w;
+    ctx.strokeStyle = C.text;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(hx, yStrip - 6); ctx.lineTo(hx, yCurve + hCurve); ctx.stroke();
+    ctx.fillStyle = C.text;
+    ctx.beginPath(); ctx.arc(hx, yStrip - 6, 3, 0, Math.PI * 2); ctx.fill();
+
+    // legenda
+    text(ctx, 'nowy chunk na dysk', padL, 12, { size: 10, color: C.new });
+    text(ctx, 'duplikat pominięty', padL + 108, 12, { size: 10, color: C.dupe });
+    text(ctx, 'delta', padL + 196, 12, { size: 10, color: C.violet });
+    text(ctx, 'bajty wchodzące', padL + 240, 12, { size: 10, color: C.muted });
+    text(ctx, 'zapisane na dysk', padL + 330, 12, { size: 10, color: C.save });
+
+    // odczyt przy głowie
+    const wIn = head ? cumIn[head - 1] : 0;
+    const wOut = head ? cumW[head - 1] : 0;
+    const out = {
+      pct: head / tr.length,
+      written: wOut, logical: wIn,
+      ratio: wOut > 0 ? wIn / wOut : 0,
+      chunks: head
+    };
+    box(ctx, W - 232, H - 24, 220, 18, { r: 4, fill: alpha(C.info, 0.1) });
+    text(ctx, Math.round(out.pct * 100) + '% dnia · ' + fmtB(wIn) + ' wejścia · ' +
+      fmtB(wOut) + ' na dysk' + (out.ratio ? ' · ' + out.ratio.toFixed(1) + ':1' : ''),
+      W - 222, H - 15, { size: 11, color: C.text, mono: true });
+    text(ctx, 'chunków ' + fmt(head) + ' z ' + fmt(tr.length) +
+      (day.stride > 1 ? ' (krok ' + day.stride + ')' : ''), padL, H - 15,
+      { size: 10, color: C.dim, mono: true });
+    return out;
+  }
+
+  function line(ctx, data, x0, y0, h, max, color, lw, dash, pw) {
+    if (data.length < 2) return;
+    ctx.strokeStyle = color; ctx.lineWidth = lw;
+    if (dash) ctx.setLineDash(dash);
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      const x = x0 + (i / (data.length - 1)) * pw;
+      const y = y0 + h - (Math.min(1, data[i] / max)) * h;
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   function niceMax(v) {
     const p = Math.pow(10, Math.floor(Math.log10(v)));
     const n = v / p;
     return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
   }
 
-  NS.view = { draw, drawTimeline, C, rr, box, text, alpha, bar, spark, fmtB };
+  NS.view = { draw, drawTimeline, drawDay, C, rr, box, text, alpha, bar, spark, fmtB, fmt };
 
 })(window.SIM = window.SIM || {});

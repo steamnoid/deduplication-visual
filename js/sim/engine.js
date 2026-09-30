@@ -302,6 +302,7 @@
       // delta: chunkId -> {target, rawLen}. Rekord na dysku niesie
       // operacje COPY/INS, a bajt docelowy musi żyć, żeby plik dało się
       // odtworzyć — stąd liczymy zerwane łańcuchy.
+      this.onChunk = null;          // hak: oś czasu nagrywa ślad dnia
       this.deltaOf = new Map();
       this.rcache = new Map();
       this._storeBytes = cfg.keepBytes !== false;
@@ -385,7 +386,7 @@
         const known = this.dataIndex.get(fp);
         const onDisk = known && known.length > 0;
 
-        let cid;
+        let cid, wrote = false;
         if (res.hit && onDisk) {
           // duplikat: podbijamy referencję ostatniej kopii na dysku
           cid = known[known.length - 1];
@@ -403,6 +404,7 @@
           this.bucketCounts[bucket]++;
           const rec = this.makeRecord(cid, ds.pool.subarray(ch.off + cs, ch.off + cs + len), len, k);
           this.storeChunk(e, rec);
+          wrote = true;
           st.unique++;
           st.written += rec.length;
           let arr = this.dataIndex.get(fp);
@@ -412,6 +414,13 @@
 
         st.chunks++;
         st.logical += len;
+        if (this.onChunk) {
+          this.onChunk({
+            cid, file: this.curFile.i, at: cs, len,
+            rec: this.deltaOf.has(cid) ? this.chunkLength(cid) : 0,
+            kind: this.deltaOf.has(cid) ? 'delta' : (wrote ? 'new' : 'dup')
+          });
+        }
         this.fileChunkMarks.push(cid);
         this.tail.push(cid);
         if (this.tail.length > 600) this.tail.splice(0, this.tail.length - 600);

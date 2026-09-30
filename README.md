@@ -94,7 +94,21 @@ Na 30 dniach z retencją 7 dni: 2341 prób, 164 zapisane delty, 73% oszczędnoś
 
 Symulator nie udaje, że problemu nie ma: przycisk **🧹 Wymuś GC i sprawdź restore** zbiera wszystko, co straciło ostatnią referencję, i przelicza restore — część plików przechodzi z ✓ na ✗ RÓŻNICA. Rezygnacja z zabezpieczenia oszczędza 300 KB zapisu i psuje 22 pliki, których już nie da się złożyć.
 
-Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni, **S5** kompresja delta (zrobione), **S6** warstwa wyjaśnień.
+### Odtwarzanie dnia (`view.drawDay`)
+
+Batch 30 dni nagrywa **ślad dnia**: zdarzenia chunków (nowy na dysk / duplikat pominięty / delta) z ich rozmiarem i pozycją, plus znaczniki tego, co robił system (wygaśnięte kopie, GC). Ślad jest przycięty w locie do ~1400 zdarzeń na dzień, żeby równomiernie pokrywał cały dzień i nie ważył wiele.
+
+W panelu 30 dni klikasz słupek wybranego dnia i patrzysz, jak ten dzień przebiegał: pas zdarzeń (wysokość to realny rozmiar chunka), dwie krzywe narastające — bajty wchodzące i zapisane na dysk — oraz głowa odtwarzania z odczytem na żywo. Przycisk ⏵ odtwarza dzień od zera, suwak przewija.
+
+Dzień 1 i dzień 30 wyglądają zupełnie inaczej i to jest sedno: pierwszego dnia zapisujemy 569 KB przy ratio 1,4:1, trzydziestego 142 KB przy 5,5:1. Backup przestaje pisać i zostaje sam indeks.
+
+### Sprawdzanie bez przeglądarki
+
+`npm test` uruchamia `tools/smoke-drawing.cjs`, który wczytuje silnik w atrapie `window`, przepuszcza 30 dni i sprawdza funkcje rysujące na atrapie kontekstu 2D: layout wykresu, monotoniczność głowy odtwarzania, etykiety, to że dzień 1 zapisuje więcej niż dzień 30, a także to, że **każdy identyfikator używany w `app.js` istnieje w `simulator.html`** i że wszystkie skrypty na stronie są na dysku. Ten ostatni test złapał eksport `drawDay`, którego brakowało w `NS.view`.
+
+`npm run check` dodatkowo robi `node --check` na wszystkich modułach symulatora.
+
+Etapy symulatora: **S1** bajty → chunki → indeks, **S2** zapis do kontenerów, retencja i dziury, **S3** strategie indeksu i porównanie, **S4** GC, restore i oś czasu 30 dni, **S5** kompresja delta, **S6** odtwarzanie przebiegu dnia (zrobione), **S7** warstwa wyjaśnień.
 
 ## Co w środku
 

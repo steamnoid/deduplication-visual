@@ -10,7 +10,7 @@
       delta: 'off', chainGuard: 'expand'
     },
     run: null, playing: true, dirty: true,
-    tl: { res: null, sel: 0, layout: null, busy: false }
+    tl: { res: null, sel: 0, layout: null, busy: false, t: 1, playing: false, raf: 0 }
   };
 
   const el = {};
@@ -185,7 +185,7 @@
     }, 40));
   }
 
-  function closeTimeline() { el.tlPanel.hidden = true; }
+  function closeTimeline() { stopDay(); el.tlPanel.hidden = true; }
 
   function renderTimeline() {
     const res = state.tl.res;
@@ -202,8 +202,14 @@
       'codziennie backup wszystkich plików, pliki się zmieniają, najstarsze kopie wygasają po ' +
       s.days + ' dniach, a gdy dziury przekroczą 25% dysku, startuje GC. Policzone w ' +
       Math.round(res.ms) + ' ms.</p>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin:14px 0 2px">' +
+      '<button class="btn" id="dayPlay">⏵ Odtwórz dzień</button>' +
+      '<input type="range" id="dayPos" min="0" max="1000" value="1000" style="flex:1">' +
+      '<span style="font-size:11px;color:var(--dim);min-width:96px" id="dayRead">100% dnia</span></div>' +
+      '<canvas id="dayCv" style="width:100%;height:200px;display:block;margin:4px 0 2px"></canvas>' +
       '<canvas id="tlCv" style="width:100%;height:250px;display:block;margin:6px 0 4px"></canvas>' +
-      '<p class="note" style="margin-top:0">Kliknij słupek, żeby zobaczyć, co się działo danego dnia.</p>' +
+      '<p class="note" style="margin-top:0">Kliknij słupek, żeby wybrać dzień. Przebieg poniżej to ten sam ' +
+      'chunker i ten sam indeks co w animacji — tylko z liczbami zamiast klatek.</p>' +
 
       '<h3 style="margin:18px 0 8px;font-size:13px">Dzień ' + d.day + '</h3>' +
       '<div class="stats" style="margin:0 0 6px">' +
@@ -269,6 +275,8 @@
         : 'Uwaga: część plików nie odtwarza się identycznie. To nie jest miły komunikat, ale właśnie po to restore sprawdzamy bajt po bajcie.') +
       '</p>';
 
+    drawDayCanvas(res, state.tl.sel);
+
     const cv = $('tlCv');
     const W = cv.clientWidth || 1100;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -305,7 +313,29 @@
       const L = state.tl.layout;
       if (!L) return;
       const i = Math.floor((x - L.px) / L.bw);
-      if (i >= 0 && i < L.n) { state.tl.sel = i; renderTimeline(); }
+      if (i >= 0 && i < L.n) {
+        state.tl.sel = i;
+        state.tl.t = 1;
+        state.tl.playing = false;
+        stopDay();
+        renderTimeline();
+      }
+    };
+
+    const pos = $('dayPos');
+    pos.value = Math.round(state.tl.t * 1000);
+    pos.oninput = () => {
+      state.tl.t = +pos.value / 1000;
+      stopDay();
+      drawDayCanvas(res, state.tl.sel);
+    };
+    $('dayPlay').onclick = () => {
+      state.tl.playing = !state.tl.playing;
+      $('dayPlay').textContent = state.tl.playing ? '⏸ Pauza' : '⏵ Odtwórz dzień';
+      if (state.tl.playing) {
+        if (state.tl.t >= 1) state.tl.t = 0;
+        tickDay(res);
+      } else stopDay();
     };
   }
 
@@ -356,6 +386,53 @@
       '<span style="font-size:11px;color:var(--dim)">sprząta wszystko, co straciło ostatnią referencję — ' +
       'i pokaże, co przestanie się odtwarzać</span></div>');
     return out.join('');
+  }
+
+
+  /* Odtwarzanie wybranego dnia. Nie korzystamy z głównej pętli symulacji:
+     batch liczył dzień już dawno temu, tutaj tylko przesuwamy głowę
+     po zapisanym śladzie zdarzeń. */
+  function drawDayCanvas(res, dayIdx) {
+    const cv = $('dayCv');
+    if (!cv) return;
+    const W = cv.clientWidth || 900;
+    const H = 200;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const day = res.series[dayIdx];
+    const out = SIM.view.drawDay(ctx, W, H, day, state.tl.t);
+    const el = $('dayRead');
+    if (el && out) {
+      el.textContent = Math.round(out.pct * 100) + '% · ' + out.ratio.toFixed(1) + ':1';
+    }
+  }
+
+  function tickDay(res) {
+    cancelAnimationFrame(state.tl.raf);
+    const step = () => {
+      if (!state.tl.playing) return;
+      state.tl.t = Math.min(1, state.tl.t + 0.012);
+      const pos = $('dayPos');
+      if (pos) pos.value = Math.round(state.tl.t * 1000);
+      drawDayCanvas(res, state.tl.sel);
+      if (state.tl.t >= 1) {
+        state.tl.playing = false;
+        const b = $('dayPlay');
+        if (b) b.textContent = '⏵ Odtwórz dzień';
+        return;
+      }
+      state.tl.raf = requestAnimationFrame(step);
+    };
+    state.tl.raf = requestAnimationFrame(step);
+  }
+
+  function stopDay() {
+    cancelAnimationFrame(state.tl.raf);
+    state.tl.playing = false;
+    const b = $('dayPlay');
+    if (b) b.textContent = '⏵ Odtwórz dzień';
   }
 
   function stat(label, value, color) {

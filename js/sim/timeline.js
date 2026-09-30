@@ -151,7 +151,22 @@
         .filter(f => !f.dead && f.born !== undefined && f.born <= d)
         .map(f => ({ fi: f.i, v: f.version }));
 
-      // 4) właściwy dzień: skan → chunki → indeks → kontenery
+      // 4) właściwy dzień: skan → chunki → indeks → kontenery.
+      // Nagrywamy ślad, żeby dało się ten dzień odtworzyć klatka po klatce:
+      // przy tysiącach chunków zostawiamy co n-ty, żeby śład równomiernie
+      // pokrywał cały dzień i nie ważył pół gigabajta.
+      const trace = [];
+      let stride = 1, seen = 0;
+      run.onChunk = e => {
+        seen++;
+        if (seen % stride === 0) trace.push(e);
+        if (trace.length > 1400) {         // decymacja w locie
+          let j = 0;
+          for (let i = 0; i < trace.length; i += 2) trace[j++] = trace[i];
+          trace.length = j;
+          stride *= 2;
+        }
+      };
       const before = {
         logical: run.st.logical, written: run.st.written, chunks: run.st.chunks,
         dups: run.st.dups, unique: run.st.unique, falseNeg: run.st.falseNeg
@@ -195,8 +210,15 @@
         if (gcRec) events.push({ day: d, kind: 'gc', text: 'GC: ' + fmtKB(gcRec.written) + ' przepisanych, ' + gcRec.chunks + ' chunków' });
       }
 
+      run.onChunk = null;
+      const phases = [{ at: 0, kind: 'scan' }];
+      for (const e of due) phases.push({ at: trace.length, kind: 'expire', bytes: 0 });
+      if (gcRec) phases.push({ at: trace.length, kind: 'gc', bytes: gcRec.written });
+
       series.push({
         day: d + 1,
+        trace, phases, stride,
+        filesInDay: queue.map(e => e.fi),
         files: queue.length,
         logical: run.st.logical - before.logical,
         written: run.st.written - before.written,
