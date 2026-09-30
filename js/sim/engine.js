@@ -214,11 +214,24 @@
 
   /* ---------- chunker przyrostowy ---------- */
 
+  /* Normalized Chunking z FastCDC (Xia i in., USENIX ATC 2016).
+     W konfiguracji 8 KB artykuł podaje MaskS = 15 bitów, MaskA = 13
+     i MaskL = 11. Zwykła CDC używa tylko MaskA; znormalizowana używa
+     MaskS poniżej progu średniej (trudniej ciąć, więc chunki są
+     dłuższe) i MaskL powyżej (łatwiej ciąć, więc ogony się skracają).
+     Maski są liczone względem wybranej średniej, więc dla 8 KB
+     (2^13) wychodzi dokładnie 15/13/11 jak w artykule. */
+  function fastCDCMasks(bits) {
+    return { s: Math.min(31, bits + 2), a: bits, l: Math.max(1, bits - 2) };
+  }
+
   class Chunker {
-    constructor(pool, off, len, bits, fastCDC) {
+    constructor(pool, off, len, bits, fastCDC, masks) {
       this.pool = pool; this.off = off; this.len = len;
       this.bits = bits; this.mask = (1 << bits) - 1;
       this.fastCDC = fastCDC;
+      // skrót: jeden bit daje podwójne prawdopodobieństwo cięcia
+      this.masks = masks || null;
       this.pos = 0;                 // bajty przetworzone
       this.chunkStart = 0;
       this.finished = false;
@@ -232,16 +245,28 @@
     }
     get chunkLen() { return this.pos - this.chunkStart; }
 
+    /* Maska zależna od tego, gdzie jesteśmy w chunku: poniżej średniej
+     cięższa (MaskS), powyżej lżejsza (MaskL). */
+    maskFor(size) {
+      if (!this.masks || !this.fastCDC) return this.mask;
+      const avg = this.maxSize / 8;
+      return ((size < avg ? this.masks.s : this.masks.l)) >= 32
+        ? this.mask
+        : (1 << (size < avg ? this.masks.s : this.masks.l)) - 1;
+    }
+
     /* przetwarza do `budget` bajtów, zwraca liczbę ukończonych chunków */
     step(budget) {
       const end = Math.min(this.len, this.pos + budget);
       const t0 = performance.now();
       let made = 0;
+      const masks = this.masks && this.fastCDC;
       for (let i = this.pos; i < end; i++) {
         this.h = ((this.h << 1) + GEAR[this.pool[this.off + i] & 0xff]) | 0;
         const size = i - this.chunkStart + 1;
         let cut = false;
-        if (size >= this.minSize && (this.h & this.mask) === 0) cut = true;
+        const m = masks ? this.maskFor(size) : this.mask;
+        if (size >= this.minSize && (this.h & m) === 0) cut = true;
         if (this.fastCDC && size === this.maxSize) cut = true;
         if (cut) {
           this.cuts.push(this.chunkStart);
@@ -358,7 +383,8 @@
       const body = f.bodies ? f.bodies[Math.min(v, f.bodies.length - 1)] : f;
       this.curFile = f;
       this.curVersion = v;
-      this.chunker = new Chunker(this.ds.pool, body.off, body.len, this.cfg.bits, this.cfg.fastCDC);
+      this.chunker = new Chunker(this.ds.pool, body.off, body.len, this.cfg.bits,
+        this.cfg.fastCDC, this.cfg.cdcMasks ? fastCDCMasks(this.cfg.bits) : null);
       this.fileChunkMarks = [];
       this.bodyLog.set(this.markKey(f.i, this.day), body);
       this.st.backups++;
@@ -899,7 +925,7 @@
 
   /* ---------- eksport ---------- */
   NS.sim = {
-    IdList, TYPES, GEAR, fingerprint, fpInt, Chunker, Run, Container,
+    IdList, TYPES, GEAR, fastCDCMasks, fingerprint, fpInt, Chunker, Run, Container,
     buildDataset, makePool, fileName
   };
 

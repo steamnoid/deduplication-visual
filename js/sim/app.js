@@ -6,7 +6,7 @@
     cfg: {
       type: 'vm', files: 40, fileKB: 48, redundancy: 0.55,
       bits: 5, fastCDC: true, speed: 1, containerKB: 32, retention: 6,
-      indexKind: 'hash', segChunks: 16,
+      indexKind: 'hash', segChunks: 16, cdcMasks: true,
       delta: 'off', chainGuard: 'expand'
     },
     run: null, playing: true, dirty: true,
@@ -23,7 +23,7 @@
     ctx = cv.getContext('2d', { alpha: false });
     ['cfgType', 'cfgFiles', 'cfgRedund', 'cfgBits', 'cfgSpeed', 'cfgCont', 'cfgRet',
       'cfgIndex', 'cfgSeg', 'cmpBtn', 'cmpPanel', 'cmpBody', 'cmpClose',
-      'tlBtn', 'tlPanel', 'tlBody', 'tlClose', 'cfgDelta', 'cfgChain', 'rowChain',
+      'tlBtn', 'tlPanel', 'tlBody', 'tlClose', 'cfgDelta', 'cfgChain', 'rowChain', 'cfgNC',
       'files', 'btnPlay', 'btnReset', 'btnExpire', 'stLogical', 'stWritten', 'stRatio',
       'stChunks', 'stUnique', 'stDups', 'stIdx', 'stCont', 'stHoles', 'stFps', 'poolInfo'
     ].forEach(k => { el[k] = $(k); });
@@ -55,6 +55,8 @@
     syncSeg();
 
     el.cmpBtn.addEventListener('click', openCompare);
+    el.cfgNC.addEventListener('change', e => { state.cfg.cdcMasks = e.target.checked; restart(); });
+    el.cfgNC.checked = state.cfg.cdcMasks;
     el.cfgDelta.addEventListener('change', e => { state.cfg.delta = e.target.value; syncDelta(); });
     el.cfgChain.addEventListener('change', e => { state.cfg.chainGuard = e.target.value; });
     el.cfgDelta.value = state.cfg.delta;
@@ -162,7 +164,7 @@
       const base = {
         type: c.type, files: c.files, fileKB: c.fileKB, redundancy: c.redundancy,
         fastCDC: c.fastCDC, indexKind: c.indexKind, segChunks: c.segChunks,
-        containerKB: c.containerKB, retention: c.retention, days: 30
+        containerKB: c.containerKB, retention: c.retention, days: 30, cdcMasks: c.cdcMasks
       };
       const res = SIM.timeline.runBatch(Object.assign({}, base, {
         delta: c.delta !== 'off', deltaPick: c.delta, chainGuard: c.chainGuard

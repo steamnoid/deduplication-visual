@@ -66,7 +66,7 @@
     });
 
     const run = new sim.Run(ds, {
-      bits: c.bits, fastCDC: c.fastCDC, indexKind: c.indexKind,
+      bits: c.bits, fastCDC: c.fastCDC, cdcMasks: c.cdcMasks, indexKind: c.indexKind,
       segChunks: c.segChunks, containerKB: c.containerKB, keepBytes: c.keepBytes,
       delta: c.delta, deltaPick: c.deltaPick, deltaMin: c.deltaMin, deltaTargets: c.deltaTargets,
       chainGuard: c.chainGuard

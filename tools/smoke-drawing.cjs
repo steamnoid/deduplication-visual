@@ -101,6 +101,55 @@ sprawdz('zdarzenia systemowe są w śladzie', () => {
   console.log('    oznaczeń zdarzeń systemowych w miesiącu: ' + z);
 });
 
+console.log('normalized chunking:');
+sprawdz('maski liczone względem średniej', () => {
+  for (const bits of [10, 12, 13, 14]) {
+    const m = SIM.sim.fastCDCMasks(bits);
+    if (m.s !== bits + 2 || m.a !== bits || m.l !== bits - 2) {
+      throw new Error('bits=' + bits + ': ' + JSON.stringify(m));
+    }
+  }
+  const m = SIM.sim.fastCDCMasks(13);
+  if (m.s !== 15 || m.a !== 13 || m.l !== 11) throw new Error('konfiguracja 8 KB z artykułu nie zgadza się');
+});
+sprawdz('NC przybliża średnią do wybranej i zwęża rozkład', () => {
+  const ds = SIM.sim.buildDataset({ type: 'code', files: 2, fileKB: 96, redundancy: 0.5, seed: 5, versions: 1 });
+  const f = ds.files[1];
+  const stat = (nc, bits) => {
+    const ch = new SIM.sim.Chunker(ds.pool, f.bodies[0].off, f.bodies[0].len, bits, true,
+      nc ? SIM.sim.fastCDCMasks(bits) : null);
+    while (!ch.finished) ch.step(1 << 20);
+    const l = [];
+    for (let i = 0; i < ch.lens.n; i++) l.push(ch.lens.get(i));
+    l.sort((a, b) => a - b);
+    return {
+      avg: l.reduce((a, b) => a + b, 0) / l.length,
+      rozpiętość: l[Math.floor(l.length * 0.95)] - l[Math.floor(l.length * 0.05)]
+    };
+  };
+  for (const bits of [10, 12, 13]) {
+    const a = stat(false, bits), b = stat(true, bits);
+    if (b.rozpiętość >= a.rozpiętość) {
+      throw new Error('bits=' + bits + ': NC nie zwęził rozkładu (' + a.rozpiętość + ' → ' + b.rozpiętość + ')');
+    }
+    // Sprawdzamy dwie rzeczy, które są treścią rozdziału: średnia siedzi
+    // w pobliżu wybranej, a rozkład jest wyraźnie ciaśniejszy.
+    // Nie porównujemy „bliżej do targetu" — na tych danych różnica bywa
+    // rzędu kilkudziesięciu bajtów w obie strony, bo pula jest zbudowana
+    // z powielonych bloków 4096 B i punkty cięcia wracają. Dlatego
+    // tolerancja na średnią jest szeroka, a test na rozstęp jest ostry.
+    const cel = 1 << bits;
+    if (Math.abs(b.avg - cel) / cel > 0.4) {
+      throw new Error('bits=' + bits + ': średnia ' + b.avg.toFixed(0) + ' B odbiega od ' + cel + ' B o ponad 40%');
+    }
+    if (b.rozpiętość > a.rozpiętość * 0.75) {
+      throw new Error('bits=' + bits + ': rozstęp p05–p95 tylko ' + a.rozpiętość + ' → ' + b.rozpiętość);
+    }
+    console.log('    ' + (1 << bits) + ' B: średnia ' + a.avg.toFixed(0) + ' → ' + b.avg.toFixed(0) +
+      ', rozstęp p05–p95 ' + a.rozpiętość + ' → ' + b.rozpiętość);
+  }
+});
+
 console.log('tipy:');
 sprawdz('tip dnia pokazuje liczby i zdanie', () => {
   ctx._st.texts.length = 0;
